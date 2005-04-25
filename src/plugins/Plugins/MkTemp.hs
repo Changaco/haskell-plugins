@@ -36,8 +36,6 @@ module Plugins.MkTemp (
 
   ) where
 
-#include "config.h"
-
 import Data.List
 import Data.Char                ( chr, ord, isDigit )
 import Control.Monad            ( liftM )

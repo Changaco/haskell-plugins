@@ -53,9 +53,12 @@ import AltData.Typeable            ( Typeable )
 
 import Data.Either
 import Data.Map as Map
+import Data.Char
 
 import System.IO
 import System.Directory
+import System.Random
+import System.IO.Unsafe
 
 -- import Foreign.C
 -- import Foreign
@@ -235,8 +238,13 @@ dynwrap expr nm mods =
         "module "++nm++ "( resource ) where\n" ++
          concatMap (\m-> "import "++m++"\n") mods ++
         "import AltData.Dynamic\n" ++
-        "resource = let { yhjulwwiefzojcbxybbruweejw = \n" ++
-        "{-# LINE 1 \"<eval>\" #-}\n" ++ expr ++ ";} in toDyn yhjulwwiefzojcbxybbruweejw"
+        "resource = let { "++x++" = \n" ++
+        "{-# LINE 1 \"<eval>\" #-}\n" ++ expr ++ ";} in toDyn "++x
+    where
+        x = ident ()
+
+ident () = unsafePerformIO $
+            sequence (take 3 (repeat $ getStdRandom (randomR (97,122)) >>= return . chr))
 
 -- ---------------------------------------------------------------------
 -- unsafe wrapper
@@ -245,8 +253,10 @@ wrap :: String -> String -> [Import] -> String
 wrap expr nm mods =
         "module "++nm++ "( resource ) where\n" ++
         concatMap (\m-> "import "++m++"\n") mods ++
-        "resource = let { yhjulwwiefzojcbxybbruweejw = \n" ++
-        "{-# LINE 1 \"<Plugins.Eval>\" #-}\n" ++ expr ++ ";} in yhjulwwiefzojcbxybbruweejw"
+        "resource = let { "++x++" = \n" ++
+        "{-# LINE 1 \"<Plugins.Eval>\" #-}\n" ++ expr ++ ";} in "++x
+    where
+        x = ident ()
 
 -- what is this big variable name?
 -- its a random value, so that it won't clash if  the accidently mistype

@@ -43,6 +43,7 @@ data Module = Module { path  :: !FilePath
                      , iface :: Iface    -- cache the iface
                      , key   :: Key
                      }
+
 instance Ord Module where
     compare m1 m2 = mname m1 `compare` mname m2
 

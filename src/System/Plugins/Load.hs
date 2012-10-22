@@ -3,7 +3,7 @@
 {-# LANGUAGE UnboxedTuples              #-}
 {-# LANGUAGE ForeignFunctionInterface   #-}
 --
--- Copyright (C) 2004-5 Don Stewart - http://www.cse.unsw.edu.au/~dons
+-- Copyright (C) 2004-5 Don Stewart
 --
 -- This library is free software; you can redistribute it and/or
 -- modify it under the terms of the GNU Lesser General Public
@@ -191,11 +191,14 @@ load obj incpaths pkgconfs sym = do
 --
 -- | Like load, but doesn't want a package.conf arg (they are rarely used)
 --
-load_ :: FilePath -> [FilePath] -> Symbol -> IO (LoadStatus a)
+load_ :: FilePath    -- ^ object file
+      -> [FilePath]  -- ^ any include paths
+      -> Symbol      -- ^ symbol to find
+      -> IO (LoadStatus a)
 load_ o i s = load o i [] s
 
---
--- A work-around for Dynamics. The keys used to compare two TypeReps are
+
+-- | A work-around for Dynamics. The keys used to compare two TypeReps are
 -- somehow not equal for the same type in hs-plugin's loaded objects.
 -- Solution: implement our own dynamics...
 --
@@ -220,7 +223,8 @@ dynload obj incpaths pkgconfs sym = do
                         Nothing -> LoadFailure ["Mismatched types in interface"]
 
 ------------------------------------------------------------------------
---
+
+-- |
 -- The super-replacement for dynload
 --
 -- Use GHC at runtime so we get staged type inference, providing full
@@ -229,7 +233,6 @@ dynload obj incpaths pkgconfs sym = do
 --
 -- TODO where does the .hc file go in the call to build() ?
 --
-
 pdynload :: FilePath                    -- ^ object to load
          -> [FilePath]                  -- ^ include paths
          -> [PackageConf]               -- ^ package confs
@@ -274,7 +277,7 @@ pdynload_ object incpaths pkgconfs args ty sym = do
                 else return $ LoadFailure errors
 
 ------------------------------------------------------------------------
--- run the typechecker over the constraint file
+-- | run the typechecker over the constraint file
 --
 -- Problem: if the user depends on a non-auto package to build the
 -- module, then that package will not be in scope when we try to build
@@ -500,15 +503,13 @@ loadPackageFunction pkgName modName functionName =
 -- a nice canonical Z-encoded modid. packages just have a simple name.
 -- Do we want to ensure they won't clash? Probably.
 --
-
+--
 --
 -- the second argument to loadObject is a string to use as the unique
 -- identifier for this object. For normal .o objects, it should be the
 -- Z-encoded modid from the .hi file. For archives\/packages, we can
 -- probably get away with the package name
 --
-
-
 loadObject :: FilePath -> Key -> IO Module
 loadObject p ky@(Object k)  = loadObject' p ky k
 loadObject p ky@(Package k) = loadObject' p ky k
@@ -527,7 +528,7 @@ loadObject' p ky k
 
     where emptyMod q = Module q (mkModid q) Vanilla undefined ky
 
---
+-- |
 -- load a single object. no dependencies. You should know what you're
 -- doing.
 --
@@ -586,7 +587,7 @@ loadShared str = do
 
 
 --
--- Load a -package that we might need, implicitly loading the cbits too
+-- | Load a -package that we might need, implicitly loading the cbits too
 -- The argument is the name of package (e.g.  \"concurrent\")
 --
 -- How to find a package is determined by the package.conf info we store
@@ -610,7 +611,7 @@ loadPackage p = do
 
 
 --
--- Unload a -package, that has already been loaded. Unload the cbits
+-- | Unload a -package, that has already been loaded. Unload the cbits
 -- too. The argument is the name of the package.
 --
 -- May need to check if it exists.
@@ -630,7 +631,7 @@ unloadPackage pkg = do
                         rmModule (mkModid p)      -- unrecord this module
 
 --
--- load a package using the given package.conf to help
+-- | load a package using the given package.conf to help
 -- TODO should report if it doesn't actually load the package, instead
 -- of mapM_ doing nothing like above.
 --
@@ -647,7 +648,7 @@ loadPackageWith p pkgconfs = do
 
 
 -- ---------------------------------------------------------------------
--- module dependency loading
+-- | module dependency loading
 --
 -- given an Foo.o vanilla object file, supposed to be a plugin compiled
 -- by our library, find the associated .hi file. If this is found, load
@@ -725,7 +726,7 @@ loadDepends obj incpaths = do
                 return (hiface,moduleDeps)
 
 -- ---------------------------------------------------------------------
--- Nice interface to .hi parser
+-- | Nice interface to .hi parser
 --
 getImports :: String -> IO [String]
 getImports m = do

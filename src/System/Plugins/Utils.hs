@@ -325,8 +325,8 @@ replaceSuffix f suf =
 --
 outFilePath :: FilePath -> [Arg] -> (FilePath,FilePath)
 outFilePath src args =
-    let objs  = find_o args -- user sets explicit object path
-        paths = find_p args -- user sets a directory to put stuff in
+    let objs  = find_opt "-o" args -- user sets explicit object path
+        paths = find_opt "-odir" args -- user sets a directory to put stuff in
     in case () of { _
         | not (null objs)
         -> let obj = last objs in (obj, mk_hi obj)
@@ -338,21 +338,13 @@ outFilePath src args =
         -> (mk_o src, mk_hi src)
     }
     where
-          outpath = "-o"
-          outdir  = "-odir"
-
           mk_hi s = replaceSuffix s hiSuf
           mk_o  s = replaceSuffix s objSuf
 
-          find_o [] = []
-          find_o (f:f':fs) | f == outpath = [f']
-                           | otherwise    = find_o $! f':fs
-          find_o _ = []
-
-          find_p [] = []
-          find_p (f:f':fs) | f == outdir  = [f']
-                           | otherwise    = find_p $! f':fs
-          find_p _ = []
+          find_opt _ [] = []
+          find_opt opt (f:f':fs) | f == opt  = [f']
+                                 | otherwise = find_opt opt $! f':fs
+          find_opt _ _ = []
 
 ------------------------------------------------------------------------
 

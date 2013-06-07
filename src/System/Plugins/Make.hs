@@ -427,9 +427,7 @@ makeClean f = let f_hi = dropSuffix  f <> hiSuf
 makeCleaner :: FilePath -> IO ()
 makeCleaner f = makeClean f >> rm_f (dropSuffix f <> hsSuf)
 
--- internal:
---      try to remove a file, ignoring if it didn't exist in the first place
--- Doesn't seem to be able to remove all files in all circumstances, why?
+-- | Try to remove a file, ignoring if it didn't exist in the first place.
 --
 rm_f f = handleJust doesntExist (\_->return ()) (removeFile f)
     where

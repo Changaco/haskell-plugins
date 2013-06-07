@@ -123,8 +123,6 @@ type Args   = [Arg]
 -- | Convience synonym
 type Errors = [String]
 
--- touch.
-
 -- ---------------------------------------------------------------------
 -- | One-shot unconditional compilation of a single Haskell module.
 -- @make@ behaves like 'ghc -c'. Extra arguments to 'ghc' may be passed
@@ -302,7 +300,6 @@ build src obj extra_opts = do
     let flags = ghc_opts ++ output ++ extra_opts ++ [src]
 
 #if DEBUG
-    -- env.
     putStr $ show $ ghc : flags
 #endif
 

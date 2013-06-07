@@ -368,7 +368,6 @@ dynload2 obj incpath pkgconfs sym = do
 ------------------------------------------------------------------------
 --
 -- | unload a module (not its dependencies)
--- we have the dependencies, so cascaded unloading is possible
 --
 -- once you unload it, you can't 'load' it again, you have to 'reload'
 -- it. Cause we don't unload all the dependencies
@@ -379,7 +378,6 @@ unload m = rmModuleDeps m >> unloadObj m
 ------------------------------------------------------------------------
 --
 -- | unload a module and its dependencies
--- we have the dependencies, so cascaded unloading is possible
 --
 unloadAll :: Module -> IO ()
 unloadAll m = do moduleDeps <- getModuleDeps m

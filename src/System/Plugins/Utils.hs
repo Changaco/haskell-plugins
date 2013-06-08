@@ -48,6 +48,7 @@ module System.Plugins.Utils (
     (</>), (<.>), (<+>), (<>),
 
     newer,
+    handleDoesntExist,
 
     encode,
     decode,
@@ -63,14 +64,20 @@ import System.Plugins.Env              ( isLoaded )
 import System.Plugins.Consts           ( objSuf, hiSuf, tmpDir )
 -- import qualified System.MkTemp ( mkstemps )
 
-import Control.Exception               (IOException, catch)
+import Control.Exception               ( IOException, catch, handleJust )
 import Data.Char
 import Data.List
+import Data.Maybe                      ( fromMaybe )
 import Prelude hiding                  (catch)
 
 import System.IO
+import System.IO.Error              ( ioeGetFileName )
 import System.Environment           ( getEnv )
 import System.Directory             ( doesFileExist, getModificationTime, removeFile )
+
+#if __GLASGOW_HASKELL__ >= 604
+import System.IO.Error              ( isDoesNotExistError )
+#endif
 
 -- ---------------------------------------------------------------------
 -- some misc types we use
@@ -349,23 +356,21 @@ outFilePath src args =
 ------------------------------------------------------------------------
 
 --
--- | is file1 newer than file2?
+-- | Is file1 newer than file2 ?
 --
--- needs some fixing to work with 6.0.x series. (is this true?)
---
--- fileExist still seems to throw exceptions on some platforms: ia64 in
--- particular.
---
--- invarient : we already assume the first file, 'a', exists
+-- If file1 is missing, throws an exception. If file2 is missing, returns True.
 --
 newer :: FilePath -> FilePath -> IO Bool
 newer a b = do
-    a_t      <- getModificationTime a
-    b_exists <- doesFileExist b
-    if not b_exists
-        then return True                -- needs compiling
-        else do b_t <- getModificationTime b
-                return ( a_t > b_t )    -- maybe need recompiling
+    a_t <- getModificationTime a
+    handleDoesntExist (\_ -> return True) $ do
+        b_t <- getModificationTime b
+        return ( a_t > b_t )
+
+handleDoesntExist :: (FilePath -> IO a) -> IO a -> IO a
+handleDoesntExist = handleJust f
+    where f e | isDoesNotExistError e = Just $ fromMaybe "" $ ioeGetFileName e
+              | otherwise = Nothing
 
 ------------------------------------------------------------------------
 --

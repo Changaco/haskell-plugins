@@ -89,9 +89,9 @@ import System.IO.Error          ( isDoesNotExistError )
 -- value, and the path to the object file produced.
 --
 data MakeStatus
-        = MakeSuccess MakeCode FilePath     -- ^ compilation was successful
-        | MakeFailure Errors                -- ^ compilation failed
-        deriving (Eq,Show)
+    = MakeSuccess MakeCode FilePath     -- ^ compilation was successful
+    | MakeFailure Errors                -- ^ compilation failed
+    deriving (Eq,Show)
 
 -- | The @MakeCode@ type is used when compilation is successful, to
 -- distinguish two cases:
@@ -106,9 +106,9 @@ data MakeCode
 -- | An equivalent status for the preprocessor phase
 --
 data MergeStatus
-        = MergeSuccess MergeCode Args FilePath  -- ^ the merge was successful
-        | MergeFailure Errors                   -- ^ failure, and any errors returned
-        deriving (Eq,Show)
+    = MergeSuccess MergeCode Args FilePath  -- ^ the merge was successful
+    | MergeFailure Errors                   -- ^ failure, and any errors returned
+    deriving (Eq,Show)
 
 --
 -- | Merging may be avoided if the source files are older than an
@@ -198,19 +198,20 @@ hasChanged :: Module -> IO Bool
 hasChanged = hasChanged' ["hs","lhs"]
 
 hasChanged' :: [String] -> Module -> IO Bool
-hasChanged' suffices m@(Module {path = p})
-    = do modFile <- doesFileExist p
-         mbFile <- findFile suffices p
-         case mbFile of
-           Just f | modFile
-             -> do srcT <- getModificationTime f
-                   objT <- getModificationTime p
-                   if srcT > objT
-                      then return True
-                      else do deps <- getModuleDeps m
-                              depsStatus <- mapM (hasChanged' suffices) deps
-                              return (or depsStatus)
-           _ -> return True
+hasChanged' suffices m@(Module {path = p}) = do
+    modFile <- doesFileExist p
+    mbFile <- findFile suffices p
+    case mbFile of
+         Just f | modFile -> do
+             srcT <- getModificationTime f
+             objT <- getModificationTime p
+             if srcT > objT
+                then return True
+                else do
+                    deps <- getModuleDeps m
+                    depsStatus <- mapM (hasChanged' suffices) deps
+                    return $ or depsStatus
+         _ -> return True
 
 --
 -- | 'recompileAll' is like 'makeAll', but rather than relying on
@@ -222,16 +223,17 @@ recompileAll :: Module -> [Arg] -> IO MakeStatus
 recompileAll = recompileAll' ["hs","lhs"]
 
 recompileAll' :: [String] -> Module -> [Arg] -> IO MakeStatus
-recompileAll' suffices m args
-    = do changed <- hasChanged m
-         if changed
-            then do mbSource <- findFile suffices (path m)
-                    case mbSource of
-                      Nothing
-                          -> error $ "Couldn't find source for object file: " ++ path m
-                      Just source
-                          -> makeAll source args
-            else return (MakeSuccess NotReq (path m))
+recompileAll' suffices m args = do
+    changed <- hasChanged m
+    if changed
+        then do
+            mbSource <- findFile suffices (path m)
+            case mbSource of
+                Nothing
+                    -> error $ "Couldn't find source for object file: " ++ path m
+                Just source
+                    -> makeAll source args
+        else return (MakeSuccess NotReq (path m))
 
 -- ---------------------------------------------------------------------
 -- rawMake : really do the compilation
@@ -255,26 +257,25 @@ rawMake :: FilePath        -- ^ src
         -> IO MakeStatus
 
 rawMake src args docheck = do
-        src_exists <- doesFileExist src
-        if not src_exists
-                then return $ MakeFailure ["Source file does not exist: "++src]
-                else do {
-        ; let (obj,_) = outFilePath src args
-        ; src_changed <- if docheck then src `newer` obj else return True
-        ; if not src_changed
-          then return $ MakeSuccess NotReq obj
-          else do
+    src_exists <- doesFileExist src
+    if not src_exists
+        then return $ MakeFailure ["Source file does not exist: "++src]
+        else do
+            let (obj,_) = outFilePath src args
+            src_changed <- if docheck then src `newer` obj else return True
+            if not src_changed
+                then return $ MakeSuccess NotReq obj
+                else do
 #if DEBUG
-                putStr "Compiling object ... " >> hFlush stdout
+                    putStr "Compiling object ... " >> hFlush stdout
 #endif
-                err <- build src obj args
+                    err <- build src obj args
 #if DEBUG
-                putStrLn "done"
+                    putStrLn "done"
 #endif
-                return $ if null err
-                         then MakeSuccess ReComp obj
-                         else MakeFailure err
-        }
+                    return $ if null err
+                                then MakeSuccess ReComp obj
+                                else MakeFailure err
 
 --
 -- | Lower-level than 'make'. Compile a .hs file to a .o file
@@ -375,43 +376,45 @@ rawMerge src stb out always_merge = do
     src_exists <- doesFileExist src
     stb_exists <- doesFileExist stb
     case () of {_
-        | not src_exists  -> return $
-                MergeFailure ["Source file does not exist : "++src]
-        | not stb_exists -> return $
-                MergeFailure ["Source file does not exist : "++stb]
-        | otherwise -> do {
+        | not src_exists ->
+            return $ MergeFailure ["Source file does not exist : "++src]
 
-    ;do_merge <- do src_changed <- src `newer` out
-                    stb_changed <- stb `newer` out
-                    return $ src_changed || stb_changed
+        | not stb_exists ->
+            return $ MergeFailure ["Source file does not exist : "++stb]
 
-    ;if not do_merge && not always_merge
-     then return $ MergeSuccess NotReq [] out
-     else do
-        src_str <- readFile' src
-        stb_str <- readFile' stb
+        | otherwise -> do
+            src_changed <- src `newer` out
+            stb_changed <- stb `newer` out
+            let changed = src_changed || stb_changed
 
-        let (a,a') = parsePragmas src_str
-            (b,b') = parsePragmas stb_str
-            opts = a ++ a' ++ b ++ b'
+            if not changed && not always_merge
+                then return $ MergeSuccess NotReq [] out
+                else do
+                    src_str <- readFile' src
+                    stb_str <- readFile' stb
 
-        let e_src_syn = parse src src_str
-            e_stb_syn = parse stb stb_str
+                    let (a,a') = parsePragmas src_str
+                        (b,b') = parsePragmas stb_str
+                        opts = a ++ a' ++ b ++ b'
 
-        -- check if there were parser errors
-        case (e_src_syn,e_stb_syn) of
-                (Left e,  _)       -> return $ MergeFailure [e]
-                (_ , Left e)       -> return $ MergeFailure [e]
-                (Right src_syn, Right stb_syn) -> do {
+                    let e_src_syn = parse src src_str
+                        e_stb_syn = parse stb stb_str
 
-        ;let mrg_syn = mergeModules src_syn stb_syn
-             mrg_syn'= replaceModName mrg_syn (mkModid $ basename out)
-             mrg_str = pretty mrg_syn'
+                    -- check if there were parser errors
+                    case (e_src_syn,e_stb_syn) of
+                        (Left e,  _)       -> return $ MergeFailure [e]
+                        (_ , Left e)       -> return $ MergeFailure [e]
+                        (Right src_syn, Right stb_syn) -> do
 
-        ;hdl <- openFile out WriteMode  -- overwrite!
-        ;hPutStr hdl mrg_str ; hClose hdl
-        ;return $ MergeSuccess ReComp opts out -- must have recreated file
-    }}}
+                            let mrg_syn = mergeModules src_syn stb_syn
+                                mrg_syn'= replaceModName mrg_syn (mkModid $ basename out)
+                                mrg_str = pretty mrg_syn'
+
+                            hdl <- openFile out WriteMode  -- overwrite!
+                            hPutStr hdl mrg_str
+                            hClose hdl
+                            return $ MergeSuccess ReComp opts out
+    }
 
 -- ---------------------------------------------------------------------
 -- | makeClean : assuming we some element of [f.hs,f.hi,f.o], remove the
@@ -430,8 +433,7 @@ makeCleaner f = makeClean f >> rm_f (dropSuffix f <> hsSuf)
 -- | Try to remove a file, ignoring if it didn't exist in the first place.
 --
 rm_f f = handleJust doesntExist (\_->return ()) (removeFile f)
-    where
-        doesntExist ioe
+    where doesntExist ioe
                 | isDoesNotExistError ioe = Just ()
                 | otherwise               = Nothing
 

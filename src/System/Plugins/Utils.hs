@@ -40,7 +40,7 @@ module System.Plugins.Utils (
     joinFileExt,
     splitFileExt,
 
-    isSublistOf,                -- :: Eq a => [a] -> [a] -> Bool
+    isSublistOf,
 
     dirname,
     basename,

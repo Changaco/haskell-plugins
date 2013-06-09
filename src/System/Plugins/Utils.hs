@@ -20,63 +20,34 @@
 
 module System.Plugins.Utils (
     Arg,
-
-    hWrite,
-
-    mkUnique,
-    hMkUnique,
-    mkUniqueIn,
-    hMkUniqueIn,
-
+    mkTemp,
     findFile,
-
-    mkTemp, mkTempIn, {- internal -}
-
-    replaceSuffix,
-    outFilePath,
-    dropSuffix,
     mkModid,
-    changeFileExt,
-    joinFileExt,
-    splitFileExt,
-
+    outFilePath,
     isSublistOf,
-
-    dirname,
-    basename,
-
-    (</>), (<.>), (<+>), (<>),
-
     newer,
     handleDoesntExist,
-
     encode,
     decode,
-    EncodedString,
-
-    panic
-
+    EncodedString
   ) where
 
 #include "../../../config.h"
 
-import System.Plugins.Env              ( isLoaded )
-import System.Plugins.Consts           ( objSuf, hiSuf, tmpDir )
--- import qualified System.MkTemp ( mkstemps )
+import System.Plugins.Consts    ( objSuf, hiSuf )
 
-import Control.Exception               ( IOException, catch, handleJust )
+import Control.Exception        ( handleJust )
 import Data.Char
 import Data.List
-import Data.Maybe                      ( fromMaybe )
-import Prelude hiding                  (catch)
-
-import System.IO
-import System.IO.Error              ( ioeGetFileName )
-import System.Environment           ( getEnv )
-import System.Directory             ( doesFileExist, getModificationTime, removeFile )
+import Data.Maybe               ( fromMaybe )
+import System.Directory         ( doesFileExist, getModificationTime
+                                , getTemporaryDirectory )
+import System.FilePath          ( replaceExtension, dropExtensions, takeFileName, (</>) )
+import System.IO                ( Handle, openTempFile )
+import System.IO.Error          ( ioeGetFileName )
 
 #if __GLASGOW_HASKELL__ >= 604
-import System.IO.Error              ( isDoesNotExistError )
+import System.IO.Error          ( isDoesNotExistError )
 #endif
 
 -- ---------------------------------------------------------------------
@@ -84,240 +55,23 @@ import System.IO.Error              ( isDoesNotExistError )
 
 type Arg = String
 
--- ---------------------------------------------------------------------
--- | useful
---
-panic s = ioError ( userError s )
 
--- ---------------------------------------------------------------------
--- | writeFile for Handles
---
-hWrite :: Handle -> String -> IO ()
-hWrite hdl src = hPutStr hdl src >> hClose hdl >> return ()
+mkTemp :: IO (FilePath, Handle)
+mkTemp = getTemporaryDirectory >>= \tmpd -> openTempFile tmpd "MXXXXX.hs"
 
-
--- ---------------------------------------------------------------------
--- | mkstemps.
---
--- We use the Haskell version now... it is faster than calling into
--- mkstemps(3).
---
-
--- mkstemps :: String -> Int -> IO (String,Handle)
--- mkstemps path slen = do
---         m_v <- System.MkTemp.mkstemps path slen
---         case m_v of Nothing -> error "mkstemps : couldn't create temp file"
---                     Just v' -> return v'
-
-{-
-
-mkstemps path slen = do
-    withCString path $ \ ptr -> do
-        let c_slen = fromIntegral $ slen+1
-        fd   <- throwErrnoIfMinus1 "mkstemps" $ c_mkstemps ptr c_slen
-        name <- peekCString ptr
-        hdl  <- fdToHandle fd
-        return (name, hdl)
-
-foreign import ccall unsafe "mkstemps" c_mkstemps :: CString -> CInt -> IO Fd
-
--}
-
--- ---------------------------------------------------------------------
--- | create a new temp file, returning name and handle.
--- bit like the mktemp shell utility
---
-mkTemp :: IO (String,Handle)
-mkTemp = do tmpd  <- catch (getEnv "TMPDIR") (\ (_ :: IOException) -> return tmpDir)
-            mkTempIn tmpd
-
-mkTempIn :: String -> IO (String, Handle)
-mkTempIn tmpd = do
- -- XXX    (tmpf,hdl)  <- mkstemps (tmpd++"/MXXXXXXXXX.hs") 3
-
-        (tmpf, hdl) <- openTempFile tmpd "MXXXXX.hs"
-        let modname = mkModid $ dropSuffix tmpf
-        if and $ map (\c -> isAlphaNum c && c /= '_') modname
-                then return (tmpf,hdl)
-                else panic $ "Illegal characters in temp file: `"++tmpf++"'"
-
--- ---------------------------------------------------------------------
--- | Get a new temp file, unique from those in /tmp, and from those
--- modules already loaded. Very nice for merge/eval uses.
---
--- Will run for a long time if we can't create a temp file, luckily
--- mkstemps gives us a pretty big search space
---
-mkUnique :: IO FilePath
-mkUnique = do (t,h) <- hMkUnique
-              hClose h >> return t
-
-hMkUnique :: IO (FilePath,Handle)
-hMkUnique = do (t,h) <- mkTemp
-               alreadyLoaded <- isLoaded t -- not unique!
-               if alreadyLoaded
-                        then hClose h >> removeFile t >> hMkUnique
-                        else return (t,h)
-
-mkUniqueIn :: FilePath -> IO FilePath
-mkUniqueIn dir = do (t,h) <- hMkUniqueIn dir
-                    hClose h >> return t
-
-hMkUniqueIn :: FilePath -> IO (FilePath,Handle)
-hMkUniqueIn dir = do (t,h) <- mkTempIn dir
-                     alreadyLoaded <- isLoaded t -- not unique!
-                     if alreadyLoaded
-                        then hClose h >> removeFile t >> hMkUniqueIn dir
-                        else return (t,h)
 
 findFile :: [String] -> FilePath -> IO (Maybe FilePath)
 findFile [] _  = return Nothing
 findFile (ext:exts) file
-    = do let l = changeFileExt file ext
+    = do let l = replaceExtension file ext
          b <- doesFileExist l
          if b then return $ Just l
               else findFile exts file
 
--- ---------------------------------------------------------------------
--- some filename manipulation stuff
-
---
--- | </>, <.> : join two path components
---
-infixr 6 </>
-infixr 6 <.>
-
-(</>), (<.>), (<+>), (<>) :: FilePath -> FilePath -> FilePath
-[] </> b = b
-a  </> b = a ++ "/" ++ b
-
-[] <.> b = b
-a  <.> b = a ++ "." ++ b
-
-[] <+> b = b
-a  <+> b = a ++ " " ++ b
-
-[] <> b = b
-a  <> b = a ++ b
-
---
--- | dirname : return the directory portion of a file path
--- if null, return "."
---
-dirname :: FilePath -> FilePath
-dirname p  =
-    let x = findIndices (== '\\') p
-        y = findIndices (== '/') p
-    in
-    if not $ null x
-      then if not $ null y
-          then if (maximum x) > (maximum y) then dirname' '\\' p else dirname' '/' p
-          else dirname' '\\' p
-      else dirname' '/' p
-    where
-        dirname' chara pa =
-            case reverse $ dropWhile (/= chara) $ reverse pa of
-                [] -> "."
-                pa' -> pa'
-
---
--- | basename : return the filename portion of a path
---
-basename :: FilePath -> FilePath
-basename p =
-    let x = findIndices (== '\\') p
-        y = findIndices (== '/') p
-    in
-    if not $ null x
-      then if not $ null y
-          then if (maximum x) > (maximum y) then basename' '\\' p else basename' '/' p
-          else basename' '\\' p
-      else basename' '/' p
-    where
-        basename' chara pa = reverse $ takeWhile (/= chara) $ reverse pa
-
---
--- drop suffix
---
-dropSuffix :: FilePath -> FilePath
-dropSuffix f = reverse . tail . dropWhile (/= '.') $ reverse f
-
 --
 -- | work out the mod name from a filepath
 mkModid :: String -> String
-mkModid = (takeWhile (/= '.')) . reverse . (takeWhile (\x -> ('/'/= x) && ('\\' /= x))) . reverse
-
-
------------------------------------------------------------
--- Code from Cabal ----------------------------------------
-
--- | Changes the extension of a file path.
-changeFileExt :: FilePath           -- ^ The path information to modify.
-              -> String             -- ^ The new extension (without a leading period).
-                                    -- Specify an empty string to remove an existing
-                                    -- extension from path.
-              -> FilePath           -- ^ A string containing the modified path information.
-changeFileExt fpath ext = joinFileExt name ext
-  where
-    (name,_) = splitFileExt fpath
-
--- | The 'joinFileExt' function is the opposite of 'splitFileExt'.
--- It joins a file name and an extension to form a complete file path.
---
--- The general rule is:
---
--- > filename `joinFileExt` ext == path
--- >   where
--- >     (filename,ext) = splitFileExt path
-joinFileExt :: String -> String -> FilePath
-joinFileExt fpath ""  = fpath
-joinFileExt fpath ext = fpath ++ '.':ext
-
--- | Split the path into file name and extension. If the file doesn\'t have extension,
--- the function will return empty string. The extension doesn\'t include a leading period.
---
--- Examples:
---
--- > splitFileExt "foo.ext" == ("foo", "ext")
--- > splitFileExt "foo"     == ("foo", "")
--- > splitFileExt "."       == (".",   "")
--- > splitFileExt ".."      == ("..",  "")
--- > splitFileExt "foo.bar."== ("foo.bar.", "")
-splitFileExt :: FilePath -> (String, String)
-splitFileExt p =
-  case break (== '.') fname of
-        (suf@(_:_),_:pre) -> (reverse (pre++fpath), reverse suf)
-        _                 -> (p, [])
-  where
-    (fname,fpath) = break isPathSeparator (reverse p)
-
--- | Checks whether the character is a valid path separator for the host
--- platform. The valid character is a 'pathSeparator' but since the Windows
--- operating system also accepts a slash (\"\/\") since DOS 2, the function
--- checks for it on this platform, too.
-isPathSeparator :: Char -> Bool
-isPathSeparator ch =
-#if defined(CYGWIN) || defined(__MINGW32__)
-  ch == '/' || ch == '\\'
-#else
-  ch == '/'
-#endif
-
--- Code from Cabal end ------------------------------------
------------------------------------------------------------
-
-
--- | return the object file, given the .conf file
--- i.e. /home/dons/foo.rc -> /home/dons/foo.o
---
--- we depend on the suffix we are given having a lead '.'
---
-replaceSuffix :: FilePath -> String -> FilePath
-replaceSuffix [] _ = [] -- ?
-replaceSuffix f suf =
-    case reverse $ dropWhile (/= '.') $ reverse f of
-        [] -> f  ++ suf                 -- no '.' in file name
-        f' -> f' ++ tail suf
+mkModid = dropExtensions . takeFileName     -- not the same as takeBaseName
 
 --
 -- Normally we create the .hi and .o files next to the .hs files.
@@ -339,14 +93,14 @@ outFilePath src args =
         -> let obj = last objs in (obj, mk_hi obj)
 
         | not (null paths)
-        -> let obj = last paths </> mk_o (basename src) in (obj, mk_hi obj)
+        -> let obj = last paths </> mk_o (takeFileName src) in (obj, mk_hi obj)
 
         | otherwise
         -> (mk_o src, mk_hi src)
     }
     where
-          mk_hi s = replaceSuffix s hiSuf
-          mk_o  s = replaceSuffix s objSuf
+          mk_hi s = replaceExtension s hiSuf
+          mk_o  s = replaceExtension s objSuf
 
           find_opt _ [] = []
           find_opt opt (f:f':fs) | f == opt  = [f']

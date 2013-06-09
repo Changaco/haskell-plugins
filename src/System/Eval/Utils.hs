@@ -41,6 +41,7 @@ import System.Plugins.Utils
 
 import System.IO
 import System.Directory
+import System.FilePath        ( replaceExtension )
 
 import Data.Char
 
@@ -84,7 +85,7 @@ mkUniqueWith :: (String -> String -> [Import] -> String)
 
 mkUniqueWith wrapper src mods = do
         (tmpf,hdl) <- hMkUnique
-        let nm   = mkModid (basename tmpf)       -- used as a module name
+        let nm   = mkModid tmpf       -- used as a module name
             src' = wrapper src nm mods
         hPutStr hdl src' >> hFlush hdl >> hClose hdl >> return tmpf
 
@@ -92,5 +93,5 @@ mkUniqueWith wrapper src mods = do
 -- remove all the tmp files
 --
 cleanup :: String -> String -> IO ()
-cleanup a b = mapM_ removeFile [a, b, replaceSuffix b ".hi"]
+cleanup a b = mapM_ removeFile [a, b, replaceExtension b ".hi"]
 

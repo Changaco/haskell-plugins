@@ -67,12 +67,13 @@ import System.Plugins.Env              ( lookupMerged, addMerge
                                        , getModuleDeps)
 
 #if DEBUG
-import System.IO (hFlush, stdout, openFile, IOMode(..),hClose, hPutStr, hGetContents)
+import System.IO (hFlush, stdout, openFile, IOMode(..),hClose, hGetContents, openTempFile)
 #else
-import System.IO (openFile, IOMode(..),hClose,hPutStr, hGetContents)
+import System.IO (openFile, IOMode(..),hClose, hGetContents, openTempFile)
 #endif
 
-import System.Directory         ( doesFileExist, removeFile )
+import System.Directory    ( doesFileExist, removeFile )
+import System.FilePath     ( dropExtension, replaceExtension, takeDirectory )
 
 --
 -- | The @MakeStatus@ type represents success or failure of compilation.
@@ -279,9 +280,9 @@ build :: FilePath          -- ^ path to .hs source
 
 build src obj extra_opts = do
 
-    let odir = dirname obj -- always put the .hi file next to the .o file
-                           -- does this work in the presence of hier plugins?
-                           -- won't handle hier names properly.
+    let odir = takeDirectory obj -- always put the .hi file next to the .o file
+                                 -- does this work in the presence of hier plugins?
+                                 -- won't handle hier names properly.
 
     let ghc_opts = [ "-O0" ]
         output   = [ "-o", obj, "-odir", odir,
@@ -327,10 +328,11 @@ merge :: FilePath -> FilePath -> IO MergeStatus
 merge src stb = do
     m_mod <- lookupMerged src stb
     (out,domerge) <- case m_mod of
-                Nothing -> do out <- mkUnique
-                              addMerge src stb (dropSuffix out)
+                Nothing -> do (out,h) <- mkTemp
+                              hClose h
+                              addMerge src stb (dropExtension out)
                               return (out, True) -- definitely out of date
-                Just nm -> return $ (nm <> hsSuf, False)
+                Just nm -> return $ (nm ++ hsSuf, False)
     rawMerge src stb out domerge
 
 -- | 'mergeTo' behaves like 'merge', but we can specify the file in
@@ -342,7 +344,8 @@ mergeTo src stb out = rawMerge src stb out False
 -- directory.
 mergeToDir :: FilePath -> FilePath -> FilePath -> IO MergeStatus
 mergeToDir src stb dir = do
-    out <- mkUniqueIn dir
+    (out,h) <- openTempFile dir "Merge.hs"
+    hClose h
     rawMerge src stb out True
 
 -- ---------------------------------------------------------------------
@@ -387,12 +390,10 @@ rawMerge src stb out always_merge =
                     (Right src_syn, Right stb_syn) -> do
 
                         let mrg_syn = mergeModules src_syn stb_syn
-                            mrg_syn'= replaceModName mrg_syn (mkModid $ basename out)
+                            mrg_syn'= replaceModName mrg_syn (mkModid out)
                             mrg_str = pretty mrg_syn'
 
-                        hdl <- openFile out WriteMode  -- overwrite!
-                        hPutStr hdl mrg_str
-                        hClose hdl
+                        writeFile out mrg_str
                         return $ MergeSuccess ReComp opts out
 
 -- ---------------------------------------------------------------------
@@ -402,12 +403,12 @@ rawMerge src stb out always_merge =
 -- useful for merged files, for example.
 --
 makeClean :: FilePath -> IO ()
-makeClean f = let f_hi = dropSuffix  f <> hiSuf
-                  f_o  = dropSuffix  f <> objSuf
+makeClean f = let f_hi = replaceExtension f hiSuf
+                  f_o  = replaceExtension f objSuf
               in mapM_ rm_f [f_hi, f_o]
 
 makeCleaner :: FilePath -> IO ()
-makeCleaner f = makeClean f >> rm_f (dropSuffix f <> hsSuf)
+makeCleaner f = makeClean f >> rm_f (replaceExtension f hsSuf)
 
 -- | Try to remove a file, ignoring if it didn't exist in the first place.
 --

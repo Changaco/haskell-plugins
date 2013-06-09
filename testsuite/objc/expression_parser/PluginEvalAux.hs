@@ -10,6 +10,7 @@ import Foreign.C
 import Control.Exception        ( evaluate )
 import System.IO
 import System.Directory         ( renameFile, removeFile )
+import System.FilePath          ( replaceExtension )
 
 symbol = "resource"
 
@@ -27,7 +28,7 @@ evalWithStringResult srcFile s = do
         LoadSuccess m (rsrc :: String -> IO String) -> do
           v' <- rsrc s
           unload m
-          mapM_ removeFile [ obj, replaceSuffix obj ".hi" ]
+          mapM_ removeFile [ obj, replaceExtension obj ".hi" ]
           return v'
 
 foreign export ccall evalhaskell_CString :: CString -> CString -> IO CString

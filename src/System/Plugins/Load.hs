@@ -82,6 +82,7 @@ import Data.Typeable         ( Typeable )
 import Data.List                ( isSuffixOf, nub, nubBy )
 import Control.Monad            ( when, filterM, liftM )
 import System.Directory         ( doesFileExist, removeFile )
+import System.FilePath          ( replaceExtension, takeDirectory, (</>) )
 import Foreign.C.String         ( CString, withCString, peekCString )
 
 #if !MIN_VERSION_ghc(7,2,0)
@@ -103,7 +104,7 @@ import GHC.Prim                 ( unsafeCoerce# )
 #if DEBUG
 import System.IO                ( hFlush, stdout )
 #endif
-import System.IO                ( hClose )
+import System.IO                ( hPutStr, hClose )
 
 ifaceModuleName = moduleNameString . moduleName . mi_module
 
@@ -293,13 +294,13 @@ unify obj incs args ty sym = do
         (tmpf1,hdl1) <- mkTemp  -- and send .hi file here.
         hClose hdl1
 
-        let nm  = mkModid (basename tmpf)
+        let nm  = mkModid tmpf
             src = mkTest nm (hierize' . mkModid . hierize $ obj)
                                 (fst $ break (=='.') ty) ty sym
             is  = map ("-i"++) incs             -- api
-            i   = "-i" ++ dirname obj           -- plugin
+            i   = "-i" ++ takeDirectory obj     -- plugin
 
-        hWrite hdl src
+        hPutStr hdl src >> hClose hdl
 
         e <- build tmpf tmpf1 (i:is++args++["-fno-code","-ohi "++tmpf1])
         mapM_ removeFile [tmpf,tmpf1]
@@ -338,7 +339,7 @@ pdynload obj incpaths pkgconfs sym ty = do
         -- grab the iface output from GHC. find the line relevant to our
         -- symbol. grab the string rep of the type.
         mungeIface sym o = do
-                let hi = replaceSuffix o hiSuf
+                let hi = replaceExtension o hiSuf
                 (out,_) <- exec ghc ["--show-iface", hi]
                 case find (\s -> (sym ++ " :: ") `isPrefixOf` s) out of
                         Nothing -> return undefined
@@ -361,7 +362,7 @@ dynload2 :: Typeable a =>
 dynload2 obj incpath pkgconfs sym = do
         (m, v) <- load obj incpath pkgconfs sym
         case fromDynamic v of
-            Nothing -> panic $ "load: couldn't type "++(show v)
+            Nothing -> error $ "load: couldn't type "++(show v)
             Just a  -> return (m,a)
 -}
 
@@ -520,7 +521,7 @@ loadObject' p ky k
     = do alreadyLoaded <- isLoaded k
          when (not alreadyLoaded) $ do
               r <- withCString p c_loadObj
-              when (not r) (panic $ "Could not load module `"++p++"'")
+              when (not r) (error $ "Could not load module `"++p++"'")
          addModule k (emptyMod p)   -- needs to Z-encode module name
          return (emptyMod p)
 
@@ -532,7 +533,7 @@ loadObject' p ky k
 --
 loadModule :: FilePath -> IO Module
 loadModule obj = do
-    let hifile = replaceSuffix obj hiSuf
+    let hifile = replaceExtension obj hiSuf
     exists <- doesFileExist hifile
     if (not exists)
         then error $ "No .hi file found for "++show obj
@@ -555,7 +556,7 @@ loadRawObject obj = loadObject obj (Object k)
 resolveObjs :: IO a -> IO ()
 resolveObjs unloadLoaded
     = do r <- c_resolveObjs
-         when (not r) $ unloadLoaded >> panic "resolvedObjs failed."
+         when (not r) $ unloadLoaded >> error "resolvedObjs failed."
 
 
 -- | Unload a module
@@ -564,7 +565,7 @@ unloadObj (Module { path = p, kind = k, key = ky }) = case k of
         Vanilla -> withCString p $ \c_p -> do
                 removed <- rmModule name
                 when (removed) $ do r <- c_unloadObj c_p
-                                    when (not r) (panic "unloadObj: failed")
+                                    when (not r) (error "unloadObj: failed")
         Shared  -> return () -- can't unload .so?
     where name = case ky of Object s -> s ; Package pk -> pk
 --
@@ -581,7 +582,7 @@ loadShared str = do
     if maybe_errmsg == nullPtr
         then return (Module str (mkModid str) Shared undefined (Package (mkModid str)))
         else do e <- peekCString maybe_errmsg
-                panic $ "loadShared: couldn't load `"++str++"\' because "++e
+                error $ "loadShared: couldn't load `"++str++"\' because "++e
 
 
 --
@@ -625,7 +626,7 @@ unloadPackage pkg = do
     libs <- liftM (\(a,_) -> (filter (isSublistOf pkg') ) a) (lookupPkg pkg)
     flip mapM_ libs $ \p -> withCString p $ \c_p -> do
                         r <- c_unloadObj c_p
-                        when (not r) (panic "unloadObj: failed")
+                        when (not r) (error "unloadObj: failed")
                         rmModule (mkModid p)      -- unrecord this module
 
 --
@@ -666,7 +667,7 @@ loadPackageWith p pkgconfs = do
 --
 loadDepends :: FilePath -> [FilePath] -> IO (ModIface,[Module])
 loadDepends obj incpaths = do
-    let hifile = replaceSuffix obj hiSuf
+    let hifile = replaceExtension obj hiSuf
     exists <- doesFileExist hifile
     if (not exists)
         then do

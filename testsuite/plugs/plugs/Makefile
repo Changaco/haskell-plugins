@@ -1,5 +1,5 @@
-GHCFLAGS=   -O
-PKGFLAGS+=  -package plugins -package readline
+GHCFLAGS= -O
+PKGFLAGS= -package plugins -package readline
 
 all: build
 

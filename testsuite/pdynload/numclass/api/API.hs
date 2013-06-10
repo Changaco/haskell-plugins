@@ -1,3 +1,4 @@
+{-# LANGUAGE DatatypeContexts #-}
 
 module API where
 

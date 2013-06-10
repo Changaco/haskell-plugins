@@ -5,5 +5,7 @@
  / .___/_/\__,_/\__, /____/       Type :? for help
 /_/            /____/
 
-Loading package base ... linking ... plugs> plugs> done
+Loading package base ... linking ...
+plugs> let fibs = 1 : 1 : zipWith (+) fibs (tail fibs) in fibs !! 200
+plugs> :q
 453973694165307953197296969697410619233826

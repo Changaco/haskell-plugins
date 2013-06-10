@@ -1,6 +1,3 @@
-{-# OPTIONS -fglasgow-exts #-}
--- ^ needed to derive Typeable
-
 module API where
 
 import Data.Dynamic

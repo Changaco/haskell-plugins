@@ -1,6 +1,5 @@
-GHCFLAGS=   -O0 $(GHC_EXTRA_OPTS)
-PKGFLAGS=   -package posix
-PKGFLAGS+=  -package plugins
+GHCFLAGS= -O0 $(GHC_EXTRA_OPTS)
+PKGFLAGS= -package plugins
 
 all: build
 

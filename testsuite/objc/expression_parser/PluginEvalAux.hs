@@ -1,4 +1,4 @@
-{-# OPTIONS -fglasgow-exts -fffi #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 
 module PluginEvalAux where
 

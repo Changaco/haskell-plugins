@@ -1,4 +1,3 @@
-{-# OPTIONS -cpp #-}
 --
 -- Copyright (c) 2004 Don Stewart - http://www.cse.unsw.edu.au/~dons
 -- LGPL version 2.1 or later (see http://www.gnu.org/copyleft/lesser.html)
@@ -11,7 +10,6 @@ import Data.Dynamic
 
 import Distribution.Package
 import Language.Haskell.Parser
-import Network.HxWeb
 
 import System.IO
 import System.Posix.Types   ( ProcessID, Fd )
@@ -25,10 +23,10 @@ resource_dyn :: Dynamic
 resource_dyn = toDyn resource
 
 --
--- call a shell command , returning it's output
+-- call a shell command, returning it's output
 --
 date :: IO String
-date = do (hdl,_,_) <- catch (popen "/bin/date") (\_->error "popen failed")
+date = do (hdl,_,_) <- popen "/bin/date"
           hGetLine hdl
 
 ------------------------------------------------------------------------

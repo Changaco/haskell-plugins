@@ -3,17 +3,17 @@
 include $(TOP)/config.mk
 include $(TOP)/testsuite/check.mk
 
-BIN= 		prog/Main
-OBJ=		prog/Main.o
-SRC=		prog/Main.hs
+BIN=prog/Main
+OBJ=prog/Main.o
+SRC=prog/Main.hs
 
-BINDIR=		prog
-REALBIN=	./Main
+BINDIR=prog
+REALBIN=./Main
 
-API_OBJ=	api/API.o
+API_OBJ=api/API.o
 
-INCLUDES=   	-i$(TOP)/testsuite/$(TEST)/api
-GHCFLAGS=   	-O0 -cpp -fglasgow-exts
+INCLUDES= -i$(TOP)/testsuite/$(TEST)/api
+GHCFLAGS= -O0 -cpp
 
 .SUFFIXES : .o .hs .hi .lhs .hc .s
 

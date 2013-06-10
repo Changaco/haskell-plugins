@@ -17,7 +17,7 @@ testload = do
     MakeSuccess _ o -> return o
     MakeFailure e   -> mapM_ putStrLn e >> fail "o1"
 
-  s  <- make "../Sub/Plugin2.hs" ["-i../api","-hidir.."] -- !
+  s  <- make "../Sub/Plugin2.hs" ["-i../api"]
   o2 <- case s of
     MakeSuccess _ o -> return o
     MakeFailure e   -> mapM_ putStrLn e >> fail "o2"
@@ -31,7 +31,7 @@ testload = do
       let s = proc 42
       print s
 
-  -- will reqeust  'Plugin2', but module is actually 'Sub.Plugin2'
+  -- will request  'Plugin2', but module is actually 'Sub.Plugin2'
   print o2
   fc <- pdynload (o2) ["..","../api"] [] "API.PluginAPI" "action"
   case fc of

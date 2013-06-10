@@ -1,4 +1,3 @@
-{-# OPTIONS -fglasgow-exts #-}
 module Plugin where
 
 import API

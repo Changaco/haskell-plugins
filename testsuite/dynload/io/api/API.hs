@@ -1,12 +1,8 @@
-{-# OPTIONS -fglasgow-exts #-}
-
 module API where
 
 import Data.Typeable
 
-data TestIO = TestIO {
-                field :: IO String
-        }
+data TestIO = TestIO { field :: IO String }
 
 instance Typeable TestIO where
 #if __GLASGOW_HASKELL__ >= 603
@@ -16,4 +12,4 @@ instance Typeable TestIO where
 #endif
 
 testio :: TestIO
-testio = TestIO { field = return "default value" }
+testio = TestIO $ return "default value"

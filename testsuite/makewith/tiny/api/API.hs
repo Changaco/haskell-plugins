@@ -1,5 +1,4 @@
-{-# OPTIONS -fglasgow-exts #-}
--- ^ needed to derive Typeable
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module API where
 

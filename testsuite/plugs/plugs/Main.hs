@@ -16,9 +16,8 @@ main = do
         putStrLn banner
         putStr "Loading package base" >> hFlush stdout
         loadPackage "base"
-        putStr " ... linking ... " >> hFlush stdout
+        putStrLn " ... linking ..." >> hFlush stdout
         resolveObjs (return ())
-        putStrLn "done"
 
         shell []
 
@@ -52,12 +51,12 @@ run s is = do
         return is
 
 banner = "\
-\           __                          \n\
-\    ____  / /_  ______ ______          \n\
+\           __\n\
+\    ____  / /_  ______ ______\n\
 \   / __ \\/ / / / / __ `/ ___/     PLugin User's GHCi System, for Haskell 98\n\
 \  / /_/ / / /_/ / /_/ (__  )      http://www.cse.unsw.edu.au/~dons/hs-plugins\n\
-\ / .___/_/\\__,_/\\__, /____/       Type :? for help     \n\
-\/_/            /____/                  \n"
+\ / .___/_/\\__,_/\\__, /____/       Type :? for help\n\
+\/_/            /____/\n"
 
 help = "\
 \Commands :\n\

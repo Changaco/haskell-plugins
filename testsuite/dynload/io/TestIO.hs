@@ -1,8 +1,5 @@
-{-# OPTIONS -fglasgow-exts -cpp #-}
---
 -- Copyright (c) 2004 Don Stewart - http://www.cse.unsw.edu.au/~dons
 -- LGPL version 2.1 or later (see http://www.gnu.org/copyleft/lesser.html)
---
 
 module TestIO ( resource_dyn )  where
 
@@ -26,7 +23,7 @@ resource = testio { field = date }
 -- call a shell command , returning it's output
 --
 date :: IO String
-date = do (hdl,_,_) <- catch (popen "/bin/date") (\_->error "popen failed")
+date = do (hdl,_,_) <- popen "/bin/date"
           hGetLine hdl
 
 ------------------------------------------------------------------------

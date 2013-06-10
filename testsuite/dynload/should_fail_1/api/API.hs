@@ -1,12 +1,8 @@
-{-# OPTIONS -fglasgow-exts #-}
-
 module API where
 
 import Data.Typeable
 
-data Interface = Interface {
-        function :: String
-   }
+data Interface = Interface { function :: String }
 
 instance Typeable Interface where
 #if __GLASGOW_HASKELL__ >= 603
@@ -16,5 +12,4 @@ instance Typeable Interface where
 #endif
 
 plugin :: Interface
-plugin = Interface  { function = "goodbye" }
-
+plugin = Interface "goodbye"

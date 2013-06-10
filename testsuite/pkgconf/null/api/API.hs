@@ -1,5 +1,3 @@
-{-# OPTIONS -fglasgow-exts #-}
-
 module API where
 
 data Null = Null { a, b :: Int }

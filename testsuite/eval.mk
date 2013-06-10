@@ -4,8 +4,10 @@ include $(TOP)/testsuite/check.mk
 BIN=Main
 SRC=Main.hs
 
-BINDIR=		"."
-REALBIN=	./$(BIN)
+BINDIR=.
+REALBIN=./$(BIN)
+
+GHCFLAGS= -O0 -cpp
 
 .SUFFIXES : .o .hs .hi .lhs .hc .s
 
@@ -13,7 +15,7 @@ all: $(BIN)
 
 $(BIN): $(SRC) $(OBJS)
 	@rm -f $@
-	@$(GHC) --make -fglasgow-exts $(GHCFLAGS) $(PKGFLAGS) $(EXTRAFLAGS) $(SRC)
+	@$(GHC) --make $(GHCFLAGS) $(PKGFLAGS) $(EXTRAFLAGS) $(SRC)
 
 # Standard suffix rules
 .o.hi:

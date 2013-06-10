@@ -1,12 +1,10 @@
-{-# OPTIONS -cpp #-}
+{-# LANGUAGE RankNTypes #-}
 
 module API where
 
 import Data.Typeable
 
-data Interface = Interface {
-        equals :: forall t. Eq t => t -> t -> Bool
-     }
+data Interface = Interface { equals :: forall t. Eq t => t -> t -> Bool }
 
 --
 -- see how it hides the internal type.. but to compile GHC still checks
@@ -20,5 +18,5 @@ instance Typeable Interface where
 #endif
 
 plugin :: Interface
-plugin = Interface  { equals = (==) }
+plugin = Interface (==)
 

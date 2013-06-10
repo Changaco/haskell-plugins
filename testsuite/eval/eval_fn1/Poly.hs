@@ -1,4 +1,5 @@
-{-# OPTIONS -cpp -fglasgow-exts #-}
+{-# LANGUAGE RankNTypes #-}
+
 module Poly where
 
 import Data.Typeable

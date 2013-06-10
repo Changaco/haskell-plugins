@@ -1,4 +1,1 @@
-Couldn't match `API.Interface' against `Int'
-	Expected type: API.Interface
-	Inferred type: Int
 didn't compile

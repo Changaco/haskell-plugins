@@ -1,9 +1,6 @@
-{-# OPTIONS -fglasgow-exts #-}
 --
 -- polymorphic eval!
 --
-
-module Main where
 
 import Poly
 import System.Eval.Haskell

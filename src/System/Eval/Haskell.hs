@@ -63,7 +63,7 @@ import System.IO.Unsafe
 -- import Foreign.C
 -- import Foreign
 
-defaultArgs = ["-O0","-fglasgow-exts","-package","plugins"]
+defaultArgs = ["-O0","-package","plugins"]
 
 -- | 'eval' provides a typesafe (to a limit) form of runtime evaluation
 -- for Haskell -- a limited form of /runtime metaprogramming/. The

@@ -26,7 +26,6 @@ module System.Eval.Utils (
         Import,
         symbol,
         escape,
-        getPaths,
 
         mkUniqueWith,
         cleanup,
@@ -66,14 +65,6 @@ symbol = "resource"
 -- turn a Haskell string into a printable version of the same string
 --
 escape s = concatMap (\c -> showLitChar c $ "") s
-
---
--- For Dynamic eval's, work out the compile and load command lines
---
-getPaths :: IO ([String],[String])
-getPaths = do
-        let make_line = ["-O0","-fglasgow-exts","-package","plugins"]
-        return (make_line,[])
 
 -- ---------------------------------------------------------------------
 -- create the tmp file, and write source into it, using wrapper to

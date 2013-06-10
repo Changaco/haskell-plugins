@@ -63,6 +63,8 @@ import System.IO.Unsafe
 -- import Foreign.C
 -- import Foreign
 
+defaultArgs = ["-O0","-fglasgow-exts","-package","plugins"]
+
 -- | 'eval' provides a typesafe (to a limit) form of runtime evaluation
 -- for Haskell -- a limited form of /runtime metaprogramming/. The
 -- 'String' argument to 'eval' is a Haskell source fragment to evaluate
@@ -92,12 +94,11 @@ import System.IO.Unsafe
 eval :: Typeable a => String -> [Import] -> IO (Maybe a)
 eval src imps = do
     pwd                <- getCurrentDirectory
-    (cmdline,loadpath) <- getPaths
     tmpf               <- mkUniqueWith dynwrap src imps
-    status             <- make tmpf cmdline
+    status             <- make tmpf defaultArgs
     m_rsrc <- case status of
         MakeSuccess _ obj -> do
-           m_v <- dynload obj [pwd] loadpath symbol
+           m_v <- dynload obj [pwd] [] symbol
            case m_v of LoadFailure _      -> return Nothing
                        LoadSuccess _ rsrc -> return $ Just rsrc
         MakeFailure err -> mapM_ putStrLn err >> return Nothing
@@ -119,13 +120,12 @@ eval_ :: Typeable a =>
       -> IO (Either [String] (Maybe a)) -- ^ either errors, or maybe a well typed value
 
 eval_ src mods args ldflags incs = do
-    pwd                <- getCurrentDirectory
-    (cmdline,loadpath) <- getPaths      -- find path to altdata
-    tmpf               <- mkUniqueWith dynwrap src mods
-    status             <- make tmpf $ ["-O0"] ++ cmdline ++ args
+    pwd    <- getCurrentDirectory
+    tmpf   <- mkUniqueWith dynwrap src mods
+    status <- make tmpf $ defaultArgs ++ args
     m_rsrc <- case status of
         MakeSuccess _ obj -> do
-           m_v <- dynload obj (pwd:incs) (loadpath++ldflags) symbol
+           m_v <- dynload obj (pwd:incs) (ldflags) symbol
            return $ case m_v of LoadFailure e      -> Left e
                                 LoadSuccess _ rsrc -> Right (Just rsrc)
         MakeFailure err -> return $ Left err
@@ -213,13 +213,12 @@ mkHsValues values = concat $ elems $ Map.mapWithKey convertToHs values
 --
 typeOf :: String -> [Import] -> IO String
 typeOf src mods = do
-    pwd                <- getCurrentDirectory
-    (cmdline,loadpath) <- getPaths
-    tmpf               <- mkUniqueWith dynwrap src mods
-    status             <- make tmpf cmdline
+    pwd    <- getCurrentDirectory
+    tmpf   <- mkUniqueWith dynwrap src mods
+    status <- make tmpf defaultArgs
     ty <- case status of
         MakeSuccess _ obj -> do
-            m_v <- load obj [pwd] loadpath symbol :: IO (LoadStatus Dynamic)
+            m_v <- load obj [pwd] [] symbol :: IO (LoadStatus Dynamic)
             case m_v of
                 LoadFailure _   -> return "<failure>"
                 LoadSuccess _ v -> return $ (init . tail) $ show v

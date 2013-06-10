@@ -1,29 +1,25 @@
 # Copyright (c) 2004 Don Stewart - http://www.cse.unsw.edu.au/~dons
 # LGPL version 2.1 or later (see http://www.gnu.org/copyleft/lesser.html)
 
-#
-# regress check. TODO check expected output
-#
+
 check:
 	@( d=/tmp/plugins.tmp.$$$$ ; mkdir $$d ; export TMPDIR=$$d ;\
-	   for i in `find testsuite ! -name CVS -type d -maxdepth 2 -mindepth 2 | sort` ; do \
-		printf "=== testing %-50s ... " "$$i" ;	\
-		( cd $$i ; if [ -f dont_test ] ; then \
-		 	echo "ignored."	;\
-		  else ${MAKE} -sk && ${MAKE} -ksi check |\
-			sed '/^Compil/d;/^Load/d;/Read/d;/Expan/d;/Savi/d;/Writ/d' ;\
-		       ${MAKE} -sk clean ;\
-		  fi ) 2> /dev/null ;\
+	   for i in `find testsuite -maxdepth 2 -mindepth 2 -type d | sort` ; do \
+	     printf "=== testing %-50s ... " "$$i" ;\
+	     ( cd $$i ; [ -f dont_test ] && echo "ignored." && exit ;\
+	       ( out=`${MAKE} -sk 2>&1` ;\
+	         [ $$? -ne 0 ] && echo "failed compilation:" && echo "$$out" && exit;\
+	         ${MAKE} -ksi check ;\
+	       ) ;\
+	       ${MAKE} -sk clean ;\
+	     ) ;\
 	   done ; rm -rf $$d )
 
-#
-# making clean
-#
 
 CLEAN_FILES += *.conf.*.old *~
 
 EXTRA_CLEANS+=*.conf.inplace* *.conf.in *.h autom4te.cache \
-	      config.h config.mk config.log config.status
+              config.h config.mk config.log config.status
 
 clean:
 	cd docs && $(MAKE) clean

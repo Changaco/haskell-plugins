@@ -670,12 +670,7 @@ loadDepends obj incpaths = do
     let hifile = replaceExtension obj hiSuf
     exists <- doesFileExist hifile
     if (not exists)
-        then do
-#if DEBUG
-                putStrLn "No .hi file found." >> hFlush stdout
-#endif
-                return (undefined,[])   -- could be considered fatal
-
+        then do error $ "File not found: "++hifile
         else do hiface <- readBinIface' hifile
                 let ds = mi_deps hiface
 

@@ -15,4 +15,4 @@ main = do status <- make src ["-i"++apipath]
   where f = do v <- pdynload "../Plugin.o" ["../api"] [] "API.Interface" "resource"
                case v of
                  LoadSuccess _ (a :: Interface) -> print a -- will crash
-                 LoadFailure es     -> print es
+                 LoadFailure es                 -> mapM_ putStrLn es

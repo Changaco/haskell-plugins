@@ -10,6 +10,6 @@ main = do
     m_v   <- load "../Null.o" ["../api"] [] "resource"
     (m,v) <- case m_v of
         LoadSuccess m v -> return (m,v)
-        _               -> error "load failed"
+        LoadFailure es  -> mapM_ putStrLn es >> error "load failed"
     print $ a v
     unload m

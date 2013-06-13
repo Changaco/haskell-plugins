@@ -7,5 +7,5 @@ import API
 main = do
     m_v   <- load "../Null.o" ["../api"] [] "resource"
     case m_v of
-        LoadFailure _   -> error "load failed"
+        LoadFailure es  -> mapM_ putStrLn es >> error "load failed"
         LoadSuccess m v -> do print $ a v ; unload m

@@ -6,7 +6,7 @@ main = do
                                      []
                                      "resource_dyn"
         case m_v of
-                LoadFailure _ -> error "didn't compile"
+                LoadFailure es -> mapM_ putStrLn es >> error "didn't compile"
                 LoadSuccess _ (Interface eq) -> do
                                  print $   1 `eq` 2
                                  print $ 'a' `eq` 'b'

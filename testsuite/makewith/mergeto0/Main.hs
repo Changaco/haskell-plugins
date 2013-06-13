@@ -10,13 +10,13 @@ c    = "Out.hs"
 main = do
         status <- mergeTo a b c
         f <- case status of
-                MergeFailure e     -> error "mergeto failure"
+                MergeFailure es    -> mapM_ putStrLn es >> error "mergeto failure"
                 MergeSuccess _ _ f -> return f
         print $ f == c
 
         status <- mergeTo a b c
         f' <- case status of
-                MergeFailure e          -> error "mergeto failure"
+                MergeFailure es         -> mapM_ putStrLn es >> error "mergeto failure"
                 MergeSuccess ReComp _ f -> error "unnec. mergeto"
                 MergeSuccess NotReq _ f -> return f -- good, not req
 
@@ -24,7 +24,7 @@ main = do
 
         status <- make f' []
         o <- case status of
-                  MakeFailure   e -> error "make failed"
+                  MakeFailure es  -> mapM_ putStrLn es >> error "make failed"
                   MakeSuccess _ o -> return o
 
         m_v   <- load o [] [] "resource"

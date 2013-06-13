@@ -14,7 +14,7 @@ main = do
         -- should load C
         m_v <- load_ obj ["../api","."] "resource"
         v <- case m_v of
-                LoadFailure _   -> error "load failed"
+                LoadFailure es  -> mapM_ putStrLn es >> error "load failed"
                 LoadSuccess _ v -> return v
         let s = field v
         print s

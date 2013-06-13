@@ -10,6 +10,6 @@ main = do
                                      []
                                      "resource_dyn"
         case m_v of
-                LoadFailure _   -> error "didn't compile"
+                LoadFailure es  -> mapM_ putStrLn es >> error "didn't compile"
                 LoadSuccess _ v -> putStrLn $ (function v)
 

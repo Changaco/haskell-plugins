@@ -9,5 +9,5 @@ main = do
         -- apply the function from each plugin in turn
         mapM_ (\f -> putStrLn $ f "haskell is for hackers") functions
 
-fromLoadSuc (LoadFailure _)   = error "load failed"
+fromLoadSuc (LoadFailure es)  = error $ unlines es
 fromLoadSuc (LoadSuccess _ v) = v

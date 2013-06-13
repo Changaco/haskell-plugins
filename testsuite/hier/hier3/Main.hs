@@ -16,10 +16,10 @@ main = do
     y <- load "One.o" ["../hier3"] [] "resource"
     case y of
         LoadSuccess _ s -> putStrLn $ "One plugin: " ++ s
-        LoadFailure _   -> putStrLn "Failure: y"
+        LoadFailure es  -> mapM_ putStrLn es >> putStrLn "Failure: y"
 
 load2 f = do
     x <- load f [".", "../hier3", ""] [] "resource"   -- depend on One.o
     case x of
         LoadSuccess _ s -> putStrLn $ "Two plugin: " ++ s
-        LoadFailure _   -> putStrLn "Failure: x"
+        LoadFailure es  -> mapM_ putStrLn es >> putStrLn "Failure: x"

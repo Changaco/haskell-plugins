@@ -22,8 +22,7 @@
 --
 
 -- | An interface to the GHC runtime's dynamic linker, providing runtime
--- loading and linking of Haskell object files, commonly known as
--- /plugins/.
+-- loading and linking of Haskell object files, commonly known as /plugins/.
 
 module System.Plugins.Load (
 
@@ -225,14 +224,11 @@ dynload obj incpaths pkgconfs sym = do
 
 ------------------------------------------------------------------------
 
--- |
--- The super-replacement for dynload
+-- | The super-replacement for dynload
 --
 -- Use GHC at runtime so we get staged type inference, providing full
 -- power dynamics, *on module interfaces only*. This is quite suitable
--- for plugins, of coures :)
---
--- TODO where does the .hc file go in the call to build() ?
+-- for plugins, of course :)
 --
 pdynload :: FilePath                    -- ^ object to load
          -> [FilePath]                  -- ^ include paths
@@ -245,8 +241,7 @@ pdynload object incpaths pkgconfs ty sym =
     pdynload_ object incpaths pkgconfs [] ty sym
 
 --
--- | Like pdynload, but you can specify extra arguments to the
--- typechecker.
+-- | Like pdynload, but you can specify extra arguments to the typechecker.
 --
 pdynload_ :: FilePath       -- ^ object to load
           -> [FilePath]     -- ^ include paths for loading
@@ -270,15 +265,6 @@ pdynload_ object incpaths pkgconfs args ty sym = do
 
 ------------------------------------------------------------------------
 -- | run the typechecker over the constraint file
---
--- Problem: if the user depends on a non-auto package to build the
--- module, then that package will not be in scope when we try to build
--- the module, when performing `unify'. Normally make() will handle this
--- (as it takes extra ghc args). pdynload ignores these, atm -- but it
--- shouldn't. Consider a pdynload() that accepts extra -package flags?
---
--- Also, pdynload() should accept extra in-scope modules.
--- Maybe other stuff we want to hack in here.
 --
 unify obj incs args ty sym = do
         (tmpf,hdl)   <- mkTemp

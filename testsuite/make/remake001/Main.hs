@@ -1,11 +1,3 @@
---
--- expected output:
--- $ ./a.out
--- True
--- False
--- True
--- False
---
 
 import System.Plugins
 import System.Directory

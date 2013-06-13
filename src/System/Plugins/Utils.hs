@@ -50,8 +50,6 @@ import System.IO.Error          ( ioeGetFileName )
 import System.IO.Error          ( isDoesNotExistError )
 #endif
 
--- ---------------------------------------------------------------------
--- some misc types we use
 
 type Arg = String
 

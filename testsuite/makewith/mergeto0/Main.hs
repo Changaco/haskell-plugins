@@ -30,8 +30,8 @@ main = do
         m_v   <- load o [] [] "resource"
         v <- case m_v of
             LoadSuccess _ v -> return v
-            _               -> error "load failed"
-        putStrLn $ show $ (v :: Int)
+            LoadFailure es  -> mapM_ putStrLn es >> error "load failed"
+        print (v :: Int)
 
         makeCleaner c
 

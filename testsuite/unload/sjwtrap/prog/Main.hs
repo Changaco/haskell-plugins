@@ -11,5 +11,5 @@ main = do
     (m,v) <- case m_v of
         LoadSuccess m v -> return (m,v)
         _               -> error "load failed"
-    putStrLn ( show (a v) )
+    print $ a v
     unload m

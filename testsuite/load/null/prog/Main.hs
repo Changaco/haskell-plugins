@@ -14,4 +14,4 @@ main = do
         LoadSuccess _ v -> return v
         _               -> error "load failed"
 
-    putStrLn ( show (a v) )
+    print $ a v

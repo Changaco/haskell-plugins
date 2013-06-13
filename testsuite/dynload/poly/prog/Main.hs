@@ -8,6 +8,6 @@ main = do
         case m_v of
                 LoadFailure _ -> error "didn't compile"
                 LoadSuccess _ (Interface eq) -> do
-                                 putStrLn $ show $   1 `eq` 2
-                                 putStrLn $ show $ 'a' `eq` 'b'
+                                 print $   1 `eq` 2
+                                 print $ 'a' `eq` 'b'
 

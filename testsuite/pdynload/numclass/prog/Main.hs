@@ -13,7 +13,7 @@ main = do status <- make src ["-i"++apipath]
 
        ;v <- pdynload "../Plugin.o" ["../api"] [] "API.Interface Integer" "resource"
        ;case v of
-          LoadSuccess _ a -> let D i = snd a in putStrLn $ show i
+          LoadSuccess _ a -> let D i = snd a in print i
           _               -> putStrLn "wrong types"
 
        }

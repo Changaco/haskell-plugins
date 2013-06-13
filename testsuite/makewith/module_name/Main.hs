@@ -28,6 +28,6 @@ main = do
         v <- case m_v of
             LoadSuccess _ v -> return v
             _               -> error "load failed"
-        putStrLn $ show $ (v :: Int)
+        print $ (v :: Int)
 
         makeCleaner s''

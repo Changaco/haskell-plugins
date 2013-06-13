@@ -9,11 +9,11 @@ main = do
     (m,v) <- case m_v of
         LoadSuccess m v -> return (m,v)
         _               -> error "load failed"
-    putStrLn ( show (a v) )
+    print $ a v
 
     m_v <- reload m "resource"   -- get a new version
     v' <- case m_v of
         LoadSuccess _ v -> return v
         _               -> error "load failed"
-    putStrLn ( show (a v') )
+    print $ a v'
 

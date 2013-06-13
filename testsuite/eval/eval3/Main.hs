@@ -10,7 +10,7 @@
 
 #include "../../../config.h"
 
-import System.Eval
+import System.Plugins.Eval
 import Data.Dynamic
 
 main = do
@@ -18,15 +18,9 @@ main = do
 
     -- so, we try to compile a function that takes a dyn.
     -- looks like with GHC 6.4, we need to make sure the package.confs work:
-    m_b <- unsafeEval_ "\\dyn -> fromDyn dyn (7 :: Integer)"
-                ["Data.Dynamic"]
-                [ ]
-                [ ]
-                []
+    r <- unsafeEval_ "\\dyn -> fromDyn dyn (7 :: Integer)" ["Data.Dynamic"] [] [] []
 
-    case m_b of
-        Left s   -> mapM_ putStrLn s
-        Right b  -> putStrLn $ show (b a :: Integer) -- now apply it
+    either putStrLn (\f -> print (f a :: Integer)) r
 
 {-
 -- should work, but doesn't. type check fails

@@ -1,5 +1,5 @@
 
-import System.Eval.Haskell
+import System.Plugins.Eval
 
-main = do i <- eval "1 + 6 :: Int" [] :: IO (Maybe Int)
-          if isJust i then putStrLn $ show (fromJust i) else return ()
+main = do r <- eval "1 + 6 :: Int" [] :: IO (Either String Int)
+          either putStrLn print r

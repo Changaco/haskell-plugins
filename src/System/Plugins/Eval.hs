@@ -25,7 +25,7 @@
 -- for plugins to be compiled at runtime.
 --
 
-module System.Eval.Haskell (
+module System.Plugins.Eval (
         eval,
         eval_,
         unsafeEval,
@@ -40,28 +40,29 @@ module System.Eval.Haskell (
         hs_eval_s,      -- return a CString
 -}
 
-        module System.Eval.Utils,
-
     ) where
 
-import System.Eval.Utils
-import System.Plugins.Make
 import System.Plugins.Load
+import System.Plugins.Make
+import System.Plugins.Utils
 
-import Data.Dynamic             ( Dynamic )
-import Data.Typeable            ( Typeable )
-
-import Data.Either              ( )
-import Data.Map as Map
+import Control.Applicative
 import Data.Char
-
-import System.IO                ( )
+import Data.Dynamic             ( Dynamic )
+import Data.Map as Map
+import Data.Typeable            ( Typeable )
 import System.Directory
-import System.Random
+import System.IO                ( hClose, hFlush, hPutStr )
 import System.IO.Unsafe
+import System.Random
 
 -- import Foreign.C
 -- import Foreign
+
+type Import = String
+
+symbol :: Symbol
+symbol = "resource"
 
 defaultArgs = ["-O0","-package","plugins"]
 
@@ -78,7 +79,7 @@ defaultArgs = ["-O0","-package","plugins"]
 -- 'Dynamic').
 --
 -- If the evaluated code typechecks under the 'Typeable' constraints,
--- 'Just v' is returned. 'Nothing' indicates typechecking failed.
+-- 'Right v' is returned. 'Left errors' indicates typechecking failed.
 -- Typechecking may fail at two places: when compiling the argument, or
 -- when typechecking the splice point. 'eval' resembles a
 -- metaprogramming 'run' operator for /closed/ source fragments.
@@ -88,49 +89,26 @@ defaultArgs = ["-O0","-package","plugins"]
 --
 -- Examples:
 --
--- > do i <- eval "1 + 6 :: Int" [] :: IO (Maybe Int)
--- >    when (isJust i) $ putStrLn (show (fromJust i))
+-- > do i <- eval "1 + 6 :: Int" [] :: IO (Either String Int)
+-- >    print $ forceEither i
 --
-eval :: Typeable a => String -> [Import] -> IO (Maybe a)
-eval src imps = do
-    pwd                <- getCurrentDirectory
-    tmpf               <- mkUniqueWith dynwrap src imps
-    status             <- make tmpf defaultArgs
-    m_rsrc <- case status of
-        MakeSuccess _ obj -> do
-           m_v <- dynload obj [pwd] [] symbol
-           case m_v of LoadFailure _      -> return Nothing
-                       LoadSuccess _ rsrc -> return $ Just rsrc
-        MakeFailure err -> mapM_ putStrLn err >> return Nothing
-    makeCleaner tmpf
-    return m_rsrc
+eval :: Typeable a => String -> [Import] -> IO (Either String a)
+eval src imps = eval_ src imps defaultArgs [] []
 
 --
 -- | 'eval_' is a variety of 'eval' with all the internal hooks
 -- available. You are able to set any extra arguments to the compiler
--- (for example, optimisation flags) or dynamic loader, as well as
--- having any errors returned in an 'Either' type.
+-- (for example, optimisation flags) or dynamic loader.
 --
 eval_ :: Typeable a =>
-         String           -- ^ code to compile
-      -> [Import]         -- ^ any imports
-      -> [String]         -- ^ extra make flags
-      -> [FilePath]       -- ^ (package.confs) for load
-      -> [FilePath]       -- ^ include paths load is to search in
-      -> IO (Either [String] (Maybe a)) -- ^ either errors, or maybe a well typed value
+         String                 -- ^ code to compile
+      -> [Import]               -- ^ any imports
+      -> [String]               -- ^ extra make flags
+      -> [FilePath]             -- ^ (package.confs) for load
+      -> [FilePath]             -- ^ include paths load is to search in
+      -> IO (Either String a)   -- ^ either an error msg, or a well typed value
 
-eval_ src mods args ldflags incs = do
-    pwd    <- getCurrentDirectory
-    tmpf   <- mkUniqueWith dynwrap src mods
-    status <- make tmpf $ defaultArgs ++ args
-    m_rsrc <- case status of
-        MakeSuccess _ obj -> do
-           m_v <- dynload obj (pwd:incs) (ldflags) symbol
-           return $ case m_v of LoadFailure e      -> Left e
-                                LoadSuccess _ rsrc -> Right (Just rsrc)
-        MakeFailure err -> return $ Left err
-    makeCleaner tmpf
-    return m_rsrc
+eval_ = rawEval dynwrap dynload
 
 -- | Sometimes when constructing string fragments to evaluate, the
 -- programmer is able to provide some other constraint on the evaluated
@@ -153,52 +131,44 @@ eval_ src mods args ldflags incs = do
 -- Example:
 --
 -- > do s <- unsafeEval "map toUpper \"haskell\"" ["Data.Char"]
--- >    when (isJust s) $ putStrLn (fromJust s)
+-- >    putStrLn $ forceEither s
 --
-unsafeEval :: String -> [Import] -> IO (Maybe a)
-unsafeEval src mods = do
-    pwd    <- getCurrentDirectory
-    tmpf   <- mkUniqueWith wrap src mods
-    status <- make tmpf []
-    m_rsrc <- case status of
-        MakeSuccess _ obj  -> do
-           m_v <- load obj [pwd] [] symbol
-           case m_v of LoadFailure _      -> return Nothing
-                       LoadSuccess _ rsrc -> return $ Just rsrc
-        MakeFailure err -> mapM_ putStrLn err >> return Nothing
-    makeCleaner tmpf
-    return m_rsrc
+unsafeEval :: String -> [Import] -> IO (Either String a)
+unsafeEval src mods = unsafeEval_ src mods defaultArgs [] []
 
 --
 -- | 'unsafeEval_' is a form of 'unsafeEval' with all internal hooks
--- exposed. This is useful for application wishing to return error
--- messages to users, to specify particular libraries to link against
--- and so on.
+-- exposed. This is useful for application wishing to specify particular
+-- libraries to link against and so on.
 --
 unsafeEval_ :: String           -- ^ code to compile
             -> [Import]         -- ^ any imports
             -> [String]         -- ^ make flags
             -> [FilePath]       -- ^ (package.confs) for load
             -> [FilePath]       -- ^ include paths load is to search in
-            -> IO (Either [String] a)
+            -> IO (Either String a)
 
-unsafeEval_ src mods args ldflags incs = do
-    pwd  <- getCurrentDirectory
-    tmpf <- mkUniqueWith wrap src mods
+unsafeEval_ = rawEval wrap load
+
+rawEval wrapper loader src imps args ldflags incs = do
+    pwd <- getCurrentDirectory
+    (tmpf,tmph) <- mkTemp
+    hPutStr tmph $ wrapper src (mkModid tmpf) imps
+    hFlush tmph >> hClose tmph
     status <- make tmpf args
-    e_rsrc <- case status of
+    case status of
+        MakeFailure es     -> return $ Left $ unlines es
         MakeSuccess _ obj  -> do
-           m_v <- load obj (pwd:incs) ldflags symbol
-           case m_v of LoadFailure e      -> return $ Left e
-                       LoadSuccess _ rsrc -> return $ Right rsrc
-        MakeFailure err -> return $ Left err
-    makeCleaner tmpf
-    return e_rsrc
+            m_v <- loader obj (pwd:incs) ldflags symbol
+            case m_v of
+                 LoadFailure es     -> return $ Left $ unlines es
+                 LoadSuccess _ rsrc -> return $ Right rsrc
+      <* makeCleaner tmpf
+
 ------------------------------------------------------------------------
 --
 -- | 'mkHsValues' is a helper function for converting 'Data.Map's
--- of names and values into Haskell code. It relies on the assumption of
--- names and values into Haskell code. It relies on the assumption that
+-- of names and values into Haskell code. It relies on the assumption that
 -- the passed values' Show instances produce valid Haskell literals
 -- (this is true for all Prelude types).
 --
@@ -206,27 +176,20 @@ mkHsValues :: (Show a) => Map.Map String a -> String
 mkHsValues values = concat $ elems $ Map.mapWithKey convertToHs values
         where convertToHs :: (Show a) => String -> a -> String
               convertToHs name value = name ++ " = " ++ show value ++ "\n"
+
 ------------------------------------------------------------------------
 --
 -- | Return a compiled value's type, by using Dynamic to get a
 -- representation of the inferred type.
 --
-typeOf :: String -> [Import] -> IO String
-typeOf src mods = do
-    pwd    <- getCurrentDirectory
-    tmpf   <- mkUniqueWith dynwrap src mods
-    status <- make tmpf defaultArgs
-    ty <- case status of
-        MakeSuccess _ obj -> do
-            m_v <- load obj [pwd] [] symbol :: IO (LoadStatus Dynamic)
-            case m_v of
-                LoadFailure _   -> return "<failure>"
-                LoadSuccess _ v -> return $ (init . tail) $ show v
+typeOf :: String -> [Import] -> IO (Either String String)
+typeOf src imps = do
+    r <- eval src imps :: IO (Either String Dynamic)
+    return $ fmap (init . tail . show) r
 
-        MakeFailure err -> mapM_ putStrLn err >> return []
-    makeCleaner tmpf
-    return ty
-
+-- ---------------------------------------------------------------------
+-- wrappers
+--
 dynwrap :: String -> String -> [Import] -> String
 dynwrap expr nm mods =
         "module "++nm++ "( resource ) where\n" ++
@@ -235,14 +198,8 @@ dynwrap expr nm mods =
         "resource = let { "++x++" = \n" ++
         "{-# LINE 1 \"<eval>\" #-}\n" ++ expr ++ ";} in toDyn "++x
     where
-        x = ident ()
+        x = randName ()
 
-ident () = unsafePerformIO $
-            sequence (take 3 (repeat $ getStdRandom (randomR (97,122)) >>= return . chr))
-
--- ---------------------------------------------------------------------
--- unsafe wrapper
---
 wrap :: String -> String -> [Import] -> String
 wrap expr nm mods =
         "module "++nm++ "( resource ) where\n" ++
@@ -250,7 +207,10 @@ wrap expr nm mods =
         "resource = let { "++x++" = \n" ++
         "{-# LINE 1 \"<Plugins.Eval>\" #-}\n" ++ expr ++ ";} in "++x
     where
-        x = ident ()
+        x = randName ()
+
+randName () = unsafePerformIO $
+    sequence $ replicate 3 $ getStdRandom (randomR (97,122)) >>= return . chr
 
 -- what is this big variable name?
 -- its a random value, so that it won't clash if  the accidently mistype

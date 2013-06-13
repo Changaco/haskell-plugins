@@ -4,7 +4,7 @@
 --
 -- needs unsafeEval because eval has a broken Dynamic check
 --
-import System.Eval.Haskell
+import System.Plugins.Eval
 
-main = do fn <- unsafeEval "(\\x -> (x,x::Int))" [] :: IO (Maybe (Int -> (Int,Int)))
-          when (isJust fn) $ putStrLn $ show $ (fromJust fn) 7
+main = do r <- unsafeEval "(\\x -> (x,x::Int))" [] :: IO (Either String (Int -> (Int,Int)))
+          either putStrLn (print . ($ 7)) r

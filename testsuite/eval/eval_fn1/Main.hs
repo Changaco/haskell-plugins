@@ -3,10 +3,10 @@
 --
 
 import Poly
-import System.Eval.Haskell
+import System.Plugins.Eval
 
-main = do m_f <- eval "Fn (\\x y -> x == y)" ["Poly"]
-          when (isJust m_f) $ do
-                let (Fn f) = fromJust m_f
-                putStrLn $ show (f True True)
-                putStrLn $ show (f 1 2)
+main = do r <- eval "Fn (\\x y -> x == y)" ["Poly"]
+          case r of
+               Left e -> putStrLn e
+               Right (Fn f) -> do print $ f True True
+                                  print $ f 1 2

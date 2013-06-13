@@ -1,16 +1,14 @@
 
 import System.Plugins.Make
-import System.Eval.Haskell
+import System.Plugins.Eval
 
 main = do make "a/Extra.hs" []
 
-          i <- unsafeEval_ "show (Just (1 + 6 :: Int)) ++ extra"
+          r <- unsafeEval_ "show (Just (1 + 6 :: Int)) ++ extra"
                         ["Data.Maybe", "Extra"]
                         ["-ia"]      -- no make flags
                         []           -- no package.confs
                         ["a"]        -- include paths to load from
-                        :: IO (Either [String] String)
+                        :: IO (Either String String)
 
-          case i of
-                Right i -> putStrLn $ show i
-                Left es -> mapM_ putStrLn es
+          either putStrLn print r

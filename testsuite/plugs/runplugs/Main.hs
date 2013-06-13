@@ -7,10 +7,9 @@
 -- | Runplugs: use hs-plugins to run a Haskell expression under
 -- controlled conditions.
 --
-import System.Eval.Haskell      (unsafeEval)
+import System.Plugins.Eval      (unsafeEval)
 
 import Data.Char                (chr)
-import Data.Maybe               (isJust, fromJust)
 import Control.Monad
 
 import System.Random
@@ -41,10 +40,10 @@ main = do
     s <- getLine
     when (not . null $ s) $ do
         x <- sequence (take 3 (repeat $ getStdRandom (randomR (97,122)) >>= return . chr))
-        s <- unsafeEval ("let { "++x++
+        r <- unsafeEval ("let { "++x++
                          " = \n# 1 \"<irc>\"\n"++s++
                          "\n} in take 2048 (show "++x++
                          ")") context
-        when (isJust s) $ putStrLn $ fromJust s
+        either putStrLn putStrLn r
     exitWith ExitSuccess
 

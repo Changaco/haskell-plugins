@@ -26,12 +26,10 @@ extra-source-files: config.guess, config.h.in, config.mk.in, config.sub,
 
 library
     exposed-modules:
-            System.Eval,
-            System.Eval.Haskell,
-            System.Eval.Utils,
             System.Plugins,
             System.Plugins.Consts,
             System.Plugins.Env,
+            System.Plugins.Eval,
             System.Plugins.Load,
             System.Plugins.LoadTypes,
             System.Plugins.Make,

@@ -3,7 +3,7 @@
 -- GPL version 2 or later (see http://www.gnu.org/copyleft/gpl.html)
 --
 
-import System.Eval.Haskell
+import System.Plugins.Eval
 import System.Plugins.Load
 
 import System.Exit              ( ExitCode(..), exitWith )
@@ -39,15 +39,15 @@ run ":l" _             = return []
 run (':':'l':' ':m) is = return (m:is)
 
 run (':':'t':' ':s) is = do
-        ty <- typeOf s is
-        when (not $ null ty) (putStrLn $ s ++ " :: " ++ ty)
+        r <- typeOf s is
+        either putStrLn (\ty -> putStrLn $ s ++ " :: " ++ ty) r
         return is
 
 run (':':_) is = putStrLn help >> return is
 
 run s is = do
-        s <- unsafeEval ("show $ "++s) is
-        when (isJust s) (putStrLn (fromJust s))
+        r <- unsafeEval ("show $ "++s) is
+        either putStrLn putStrLn r
         return is
 
 banner = "\

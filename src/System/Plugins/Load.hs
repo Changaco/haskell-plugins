@@ -241,17 +241,8 @@ pdynload :: FilePath                    -- ^ object to load
          -> Symbol                      -- ^ symbol
          -> IO (LoadStatus a)
 
-pdynload object incpaths pkgconfs ty sym = do
-#if DEBUG
-        putStr "Checking types ... " >> hFlush stdout
-#endif
-        errors <- unify object incpaths [] ty sym
-#if DEBUG
-        putStrLn "done"
-#endif
-        if null errors
-                then load object incpaths pkgconfs sym
-                else return $ LoadFailure errors
+pdynload object incpaths pkgconfs ty sym =
+    pdynload_ object incpaths pkgconfs [] ty sym
 
 --
 -- | Like pdynload, but you can specify extra arguments to the

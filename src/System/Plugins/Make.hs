@@ -66,14 +66,9 @@ import System.Plugins.Process          ( exec )
 import System.Plugins.Env              ( lookupMerged, addMerge
                                        , getModuleDeps)
 
-#if DEBUG
-import System.IO (hFlush, stdout, openFile, IOMode(..),hClose, hGetContents, openTempFile)
-#else
-import System.IO (openFile, IOMode(..),hClose, hGetContents, openTempFile)
-#endif
-
 import System.Directory    ( doesFileExist, removeFile )
 import System.FilePath     ( dropExtension, replaceExtension, takeDirectory )
+import System.IO ( openFile, IOMode(..), hClose, hGetContents, openTempFile )
 
 --
 -- | The @MakeStatus@ type represents success or failure of compilation.
@@ -256,13 +251,7 @@ rawMake src args docheck = do
          Just changed
              | docheck && not changed -> return $ MakeSuccess NotReq obj
              | otherwise -> do
-#if DEBUG
-                    putStr "Compiling object ... " >> hFlush stdout
-#endif
                     err <- build src obj args
-#if DEBUG
-                    putStrLn "done"
-#endif
                     return $ if null err
                                 then MakeSuccess ReComp obj
                                 else MakeFailure err
@@ -287,12 +276,7 @@ build src obj extra_opts = do
     let ghc_opts = [ "-O0" ]
         output   = [ "-o", obj, "-odir", odir,
                      "-hidir", odir, "-i" ++ odir ]
-
-    let flags = ghc_opts ++ output ++ extra_opts ++ [src]
-
-#if DEBUG
-    putStr $ show $ ghc : flags
-#endif
+        flags = ghc_opts ++ output ++ extra_opts ++ [src]
 
     (_out,err) <- exec ghc flags       -- this is a fork()
 

@@ -100,9 +100,6 @@ import GHC.Exts                 ( addrToAny# )
 
 import GHC.Prim                 ( unsafeCoerce# )
 
-#if DEBUG
-import System.IO                ( hFlush, stdout )
-#endif
 import System.IO                ( hPutStr, hClose )
 
 ifaceModuleName = moduleNameString . moduleName . mi_module
@@ -170,18 +167,10 @@ load obj incpaths pkgconfs sym = do
     mapM_ addPkgConf pkgconfs
     (hif,moduleDeps) <- loadDepends obj incpaths
 
-    -- why is this the package name?
-#if DEBUG
-    putStr (' ':(decode $ ifaceModuleName hif)) >> hFlush stdout
-#endif
-
     m' <- loadObject obj . Object . ifaceModuleName $ hif
     let m = m' { iface = hif }
     resolveObjs (mapM_ unloadAll (m:moduleDeps))
 
-#if DEBUG
-    putStrLn " ... done" >> hFlush stdout
-#endif
     addModuleDeps m' moduleDeps
     v <- loadFunction m sym
     return $ case v of
@@ -252,13 +241,7 @@ pdynload_ :: FilePath       -- ^ object to load
           -> IO (LoadStatus a)
 
 pdynload_ object incpaths pkgconfs args ty sym = do
-#if DEBUG
-        putStr "Checking types ... " >> hFlush stdout
-#endif
         errors <- unify object incpaths args ty sym
-#if DEBUG
-        putStrLn "done"
-#endif
         if null errors
                 then load object incpaths pkgconfs sym
                 else return $ LoadFailure errors
@@ -376,16 +359,10 @@ unloadAll m = do moduleDeps <- getModuleDeps m
 reload :: Module -> Symbol -> IO (LoadStatus a)
 reload m@(Module{path = p, iface = hi}) sym = do
         unloadObj m     -- unload module (and delete)
-#if DEBUG
-        putStr ("Reloading "++(mname m)++" ... ") >> hFlush stdout
-#endif
         m_ <- loadObject p . Object . ifaceModuleName $ hi   -- load object at path p
         let m' = m_ { iface = hi }
 
         resolveObjs (unloadAll m)
-#if DEBUG
-        putStrLn "done" >> hFlush stdout
-#endif
         v <- loadFunction m' sym
         return $ case v of
                 Nothing -> LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
@@ -435,9 +412,6 @@ loadFunction__ :: Maybe String
 loadFunction__ pkg m valsym
    = do let symbol = prefixUnderscore++(maybe "" (\p -> encode p++"_") pkg)
                      ++encode m++"_"++(encode valsym)++"_closure"
-#if DEBUG
-        putStrLn $ "Looking for <<"++symbol++">>"
-#endif
         ptr@(Ptr addr) <- withCString symbol c_lookupSymbol
         if (ptr == nullPtr)
             then return Nothing
@@ -552,9 +526,6 @@ unloadObj (Module { path = p, kind = k, key = ky }) = case k of
 --
 loadShared :: FilePath -> IO Module
 loadShared str = do
-#if DEBUG
-    putStrLn $ " shared: " ++ str
-#endif
     maybe_errmsg <- withCString str $ \dll -> c_addDLL dll
     if maybe_errmsg == nullPtr
         then return (Module str (mkModid str) Shared undefined (Package (mkModid str)))
@@ -573,15 +544,8 @@ loadShared str = do
 --
 loadPackage :: String -> IO ()
 loadPackage p = do
-#if DEBUG
-        putStr (' ':p) >> hFlush stdout
-#endif
         (libs,dlls) <- lookupPkg p
         mapM_ (\l -> loadObject l (Package (mkModid l))) libs
-#if DEBUG
-        putStr (' ':show libs) >> hFlush stdout
-        putStr (' ':show dlls) >> hFlush stdout
-#endif
         mapM_ loadShared dlls
 
 
@@ -613,14 +577,8 @@ unloadPackage pkg = do
 --
 loadPackageWith :: String -> [PackageConf] -> IO ()
 loadPackageWith p pkgconfs = do
-#if DEBUG
-        putStr "Loading package" >> hFlush stdout
-#endif
         mapM_ addPkgConf pkgconfs
         loadPackage p
-#if DEBUG
-        putStrLn " done"
-#endif
 
 
 -- ---------------------------------------------------------------------
@@ -678,21 +636,8 @@ loadDepends obj incpaths = do
                 ps' <- filterM loaded . map packageIdString . nub $ ps
 #endif
 
-#if DEBUG
-                when (not (null ps')) $
-                        putStr "Loading package" >> hFlush stdout
-#endif
                 mapM_ loadPackage ps'
-#if DEBUG
-                when (not (null ps')) $
-                        putStr " ... linking ... " >> hFlush stdout
-#endif
                 resolveObjs (mapM_ unloadPackage ps')
-#if DEBUG
-                when (not (null ps')) $ putStrLn "done"
-                putStr "Loading object"
-                mapM_ (\(m,_) -> putStr (" "++ m) >> hFlush stdout) mods''
-#endif
                 moduleDeps <- mapM (\(hi,m) -> loadObject m (Object hi)) mods''
                 return (hiface,moduleDeps)
 

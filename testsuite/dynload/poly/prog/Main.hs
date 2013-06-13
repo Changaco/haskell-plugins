@@ -1,7 +1,3 @@
-{-# OPTIONS -cpp #-}
-
-#include "../../../../config.h"
-
 import System.Plugins
 import API
 

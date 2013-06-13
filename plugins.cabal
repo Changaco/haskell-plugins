@@ -22,9 +22,7 @@ cabal-version:      >= 1.6
 build-type:         Configure
 tested-with:        GHC >= 6.12.1
 extra-source-files: config.guess, config.h.in, config.mk.in, config.sub,
-                    configure, configure.ac, install.sh, Makefile,
-                    testsuite/makewith/io/TestIO.conf.in,
-                    testsuite/makewith/unsafeio/Unsafe.conf.in
+                    configure, configure.ac, install.sh, Makefile
 
 library
     exposed-modules:

@@ -662,7 +662,7 @@ loadPackageWith p pkgconfs = do
 -- then explicitly load "Foo.o". These are the same, and the loader
 -- should ignore the second load request. However, isLoaded will say
 -- that "Foo.o" is not loaded, as the full string is used as a key to
--- the modenv fm. We need a canonical form for the keys -- is basename
+-- the modenv map. We need a canonical form for the keys -- is basename
 -- good enough?
 --
 loadDepends :: FilePath -> [FilePath] -> IO (ModIface,[Module])

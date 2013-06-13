@@ -58,7 +58,7 @@ import Control.Monad            ( liftM )
 
 import Data.IORef               ( writeIORef, readIORef, newIORef, IORef() )
 import Data.Maybe               ( isJust, isNothing, fromMaybe )
-import Data.List                ( (\\), nub, )
+import Data.List                ( (\\), nub, isSuffixOf )
 
 import System.IO.Unsafe         ( unsafePerformIO )
 import System.Directory         ( doesFileExist )
@@ -80,28 +80,9 @@ import Distribution.Simple.PackageIndex
 import Distribution.Simple.Program
 import Distribution.Verbosity
 
+import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.Set as S
---
--- and map Data.Map terms to FiniteMap terms
---
-type FiniteMap k e = M.Map k e
-
-emptyFM :: FiniteMap key elt
-emptyFM   = M.empty
-
-addToFM :: (Ord key) => FiniteMap key elt -> key -> elt -> FiniteMap key elt
-addToFM   = \m k e -> M.insert k e m
-
-addWithFM :: (Ord key)
-          => (elt -> elt -> elt) -> FiniteMap key elt -> key -> elt -> FiniteMap key elt
-addWithFM   = \comb m k e -> M.insertWith comb k e m
-
-delFromFM :: (Ord key) => FiniteMap key elt -> key -> FiniteMap key elt
-delFromFM = flip M.delete
-
-lookupFM :: (Ord key) => FiniteMap key elt -> key -> Maybe elt
-lookupFM  = flip M.lookup
 
 --
 -- | We need to record what modules and packages we have loaded, so if
@@ -109,14 +90,14 @@ lookupFM  = flip M.lookup
 -- can safely ignore that request. We're in the IO monad anyway, so we
 -- can add some extra state of our own.
 --
--- The state is a FiniteMap String (Module,Int) (a hash of
+-- The state is a Map String (Module,Int) (a hash of
 -- package\/object names to Modules and how many times they've been
 -- loaded).
 --
 -- It also contains the package.conf information, so that if there is a
 -- package dependency we can find it correctly, even if it has a
 -- non-standard path or name, and if it isn't an official package (but
--- rather one provided via -package-conf). This is stored as a FiniteMap
+-- rather one provided via -package-conf). This is stored as a Map
 -- PackageName PackageConfig. The problem then is whether a user's
 -- package.conf, that uses the same package name as an existing GHC
 -- package, should be allowed, or should shadow a library package?  I
@@ -132,27 +113,29 @@ lookupFM  = flip M.lookup
 -- unlike in hram's loader.
 --
 
-type ModEnv = FiniteMap String (Module,Int)
+type ModEnv = Map String (Module,Int)
 
-type DepEnv = FiniteMap Module [Module]
+type DepEnv = Map Module [Module]
 
 -- represents a package.conf file
-type PkgEnv  = FiniteMap PackageName PackageConfig
+type PkgEnv  = Map PackageName PackageConfig
 
 type StaticPkgEnv = S.Set PackageName
 
 -- record dependencies between (src,stub) -> merged modid
-type MergeEnv = FiniteMap (FilePath,FilePath) FilePath
+type MergeEnv = Map (FilePath,FilePath) FilePath
 
 -- multiple package.conf's kept in separate namespaces
 type PkgEnvs = [PkgEnv]
 
-type Env = (MVar (),
-            IORef ModEnv,
-            IORef DepEnv,
-            IORef PkgEnvs,
-            IORef StaticPkgEnv,
-            IORef MergeEnv)
+data Env = Env {
+    envMVar :: MVar (),
+    envMod :: IORef ModEnv,
+    envDep :: IORef DepEnv,
+    envPkg :: IORef PkgEnvs,
+    envStaticPkg :: IORef StaticPkgEnv,
+    envMerged :: IORef MergeEnv
+}
 
 
 --
@@ -161,78 +144,78 @@ type Env = (MVar (),
 -- package.conf information.
 --
 env = unsafePerformIO $ do
-                mvar  <- newMVar ()
-                ref1  <- newIORef emptyFM         -- loaded objects
-                ref2  <- newIORef emptyFM
-                p     <- grabDefaultPkgConf
-                ref3  <- newIORef p               -- package.conf info
-                ref4  <- newIORef (S.fromList ["base","Cabal","haskell-src", "containers",
-                                               "arrays", "directory", "random", "process",
-                                               "ghc", "ghc-prim"])
-                ref5  <- newIORef emptyFM         -- merged files
-                return (mvar, ref1, ref2, ref3, ref4, ref5)
+    mvar  <- newMVar ()
+    ref1  <- newIORef M.empty         -- loaded objects
+    ref2  <- newIORef M.empty
+    p     <- grabDefaultPkgConf
+    ref3  <- newIORef p               -- package.conf info
+    ref4  <- newIORef (S.fromList ["base","Cabal","haskell-src", "containers",
+                                    "arrays", "directory", "random", "process",
+                                    "ghc", "ghc-prim"])
+    ref5  <- newIORef M.empty         -- merged files
+    return $ Env mvar ref1 ref2 ref3 ref4 ref5
 {-# NOINLINE env #-}
 
 -- -----------------------------------------------------------
 --
 -- | apply 'f' to the loaded objects Env, apply 'f' to the package.conf
--- FM /locks up the MVar/ so you can't recursively call a function
+-- Map /locks up the MVar/ so you can't recursively call a function
 -- inside a with any -Env function. Nice and threadsafe
 --
-withModEnv  :: Env -> (ModEnv   -> IO a) -> IO a
-withDepEnv  :: Env -> (DepEnv   -> IO a) -> IO a
-withPkgEnvs :: Env -> (PkgEnvs  -> IO a) -> IO a
-withStaticPkgEnv :: Env -> (StaticPkgEnv -> IO a) -> IO a
-withMerged  :: Env -> (MergeEnv -> IO a) -> IO a
+withModEnv  :: (ModEnv   -> IO a) -> IO a
+withDepEnv  :: (DepEnv   -> IO a) -> IO a
+withPkgEnvs :: (PkgEnvs  -> IO a) -> IO a
+withStaticPkgEnv :: (StaticPkgEnv -> IO a) -> IO a
+withMerged  :: (MergeEnv -> IO a) -> IO a
 
-withModEnv  (mvar,ref,_,_,_,_) f = withMVar mvar (\_ -> readIORef ref >>= f)
-withDepEnv  (mvar,_,ref,_,_,_) f = withMVar mvar (\_ -> readIORef ref >>= f)
-withPkgEnvs (mvar,_,_,ref,_,_) f = withMVar mvar (\_ -> readIORef ref >>= f)
-withStaticPkgEnv (mvar,_,_,_,ref,_) f = withMVar mvar (\_ -> readIORef ref >>= f)
-withMerged  (mvar,_,_,_,_,ref) f = withMVar mvar (\_ -> readIORef ref >>= f)
+withEnv f = withMVar (envMVar env) $ const f
+withModEnv  f = withEnv (readIORef (envMod env) >>= f)
+withDepEnv  f = withEnv (readIORef (envDep env) >>= f)
+withPkgEnvs f = withEnv (readIORef (envPkg env) >>= f)
+withStaticPkgEnv f = withEnv (readIORef (envStaticPkg env) >>= f)
+withMerged  f = withEnv (readIORef (envMerged env) >>= f)
 
 -- -----------------------------------------------------------
 --
 -- write an object name
 -- write a new PackageConfig
 --
-modifyModEnv :: Env -> (ModEnv   -> IO ModEnv)  -> IO ()
-modifyDepEnv :: Env -> (DepEnv   -> IO DepEnv)  -> IO ()
-modifyPkgEnv :: Env -> (PkgEnvs  -> IO PkgEnvs) -> IO ()
-modifyStaticPkgEnv :: Env -> (StaticPkgEnv  -> IO StaticPkgEnv) -> IO ()
-modifyMerged :: Env -> (MergeEnv -> IO MergeEnv)-> IO ()
+modifyModEnv :: (ModEnv   -> IO ModEnv)  -> IO ()
+modifyDepEnv :: (DepEnv   -> IO DepEnv)  -> IO ()
+modifyPkgEnv :: (PkgEnvs  -> IO PkgEnvs) -> IO ()
+modifyStaticPkgEnv :: (StaticPkgEnv  -> IO StaticPkgEnv) -> IO ()
+modifyMerged :: (MergeEnv -> IO MergeEnv)-> IO ()
 
-modifyModEnv (mvar,ref,_,_,_,_) f = lockAndWrite mvar ref f
-modifyDepEnv (mvar,_,ref,_,_,_) f = lockAndWrite mvar ref f
-modifyPkgEnv (mvar,_,_,ref,_,_) f = lockAndWrite mvar ref f
-modifyStaticPkgEnv (mvar,_,_,_,ref,_) f = lockAndWrite mvar ref f
-modifyMerged (mvar,_,_,_,_,ref) f = lockAndWrite mvar ref f
+modifyModEnv f = lockAndWrite (envMod env) f
+modifyDepEnv f = lockAndWrite (envDep env) f
+modifyPkgEnv f = lockAndWrite (envPkg env) f
+modifyStaticPkgEnv f = lockAndWrite (envStaticPkg env) f
+modifyMerged f = lockAndWrite (envMerged env) f
 
--- private
-lockAndWrite mvar ref f = withMVar mvar (\_->readIORef ref>>=f>>=writeIORef ref)
+lockAndWrite ref f = withEnv (readIORef ref >>= f >>= writeIORef ref)
 
 -- -----------------------------------------------------------
 --
 -- | insert a loaded module name into the environment
 --
 addModule :: String -> Module -> IO ()
-addModule s m = modifyModEnv env $ \fm -> let c = maybe 0 snd (lookupFM fm s)
-                                          in return $ addToFM fm s (m,c+1)
+addModule s m = modifyModEnv $ \e -> let c = maybe 0 snd (M.lookup s e)
+                                     in return $ M.insert s (m,c+1) e
 
 --getModule :: String -> IO (Maybe Module)
---getModule s = withModEnv env $ \fm -> return (lookupFM fm s)
+--getModule s = withModEnv $ \e -> return (M.lookup s e)
 
 --
 -- | remove a module name from the environment. Returns True if the
 -- module was actually removed.
 --
 rmModule :: String -> IO Bool
-rmModule s = do modifyModEnv env $ \fm -> let c = maybe 1 snd (lookupFM fm s)
-                                              fm' = delFromFM fm s
-                                          in if c-1 <= 0
-                                                then return fm'
-                                                else return fm
-                withModEnv env $ \fm -> return (isNothing  (lookupFM fm s))
+rmModule s = do modifyModEnv $ \e -> let c = maybe 1 snd (M.lookup s e)
+                                         e' = M.delete s e
+                                     in if c-1 <= 0
+                                           then return e'
+                                           else return e
+                withModEnv $ \e -> return (isNothing  (M.lookup s e))
 
 --
 -- | insert a list of module names all in one go
@@ -244,7 +227,7 @@ addModules ns = mapM_ (uncurry addModule) ns
 -- | is a module\/package already loaded?
 --
 isLoaded :: String -> IO Bool
-isLoaded s = withModEnv env $ \fm -> return $ isJust (lookupFM fm s)
+isLoaded s = withModEnv $ \e -> return $ isJust (M.lookup s e)
 
 --
 -- confusing! only for filter.
@@ -261,50 +244,51 @@ loaded m = do t <- isLoaded m ; return (not t)
 -- | Set the dependencies of a Module.
 --
 addModuleDeps :: Module -> [Module] -> IO ()
-addModuleDeps m deps = modifyDepEnv env $ \fm -> return $ addToFM fm m deps
+addModuleDeps m deps = modifyDepEnv $ \e -> return $ M.insert m deps e
 
 --
 -- | Get module dependencies. Nothing if none have been recored.
 --
 getModuleDeps :: Module -> IO [Module]
-getModuleDeps m = withDepEnv env $ \fm -> return $ fromMaybe [] (lookupFM fm m)
+getModuleDeps m = withDepEnv $ \e -> return $ fromMaybe [] (M.lookup m e)
 
 
 --
 -- | Unrecord a module from the environment.
 --
 rmModuleDeps :: Module -> IO ()
-rmModuleDeps m = modifyDepEnv env $ \fm -> return $ delFromFM fm m
+rmModuleDeps m = modifyDepEnv $ \e -> return $ M.delete m e
 
 -- -----------------------------------------------------------
 -- Package management stuff
 
 --
 -- | Insert a single package.conf (containing multiple configs) means:
--- create a new FM. insert packages into FM. add FM to end of list of FM
+-- create a new Map. insert packages into Map. add Map to end of list of Map
 -- stored in the environment.
 --
 addPkgConf :: FilePath -> IO ()
 addPkgConf f = do
     ps <- readPackageConf f
-    modifyPkgEnv env $ \ls -> return $ union ls ps
+    modifyPkgEnv $ \ls -> return $ union ls ps
 
 --
--- | add a new FM for the package.conf to the list of existing ones; if a package occurs multiple
+-- | add a new Map for the package.conf to the list of existing ones; if a package occurs multiple
 -- times, pick the one with the higher version number as the default (e.g., important for base in
 -- GHC 6.12)
 --
 union :: PkgEnvs -> [PackageConfig] -> PkgEnvs
 union ls ps' =
-        let fm = emptyFM -- new FM for this package.conf
-        in foldr addOnePkg fm ps' : ls
+        let e = M.empty -- new Map for this package.conf
+        in foldr addOnePkg e ps' : ls
     where
       -- we add each package with and without it's version number and with the full installedPackageId
-      addOnePkg p fm' = addToPkgEnvs (addToPkgEnvs (addToPkgEnvs fm' (display $ sourcePackageId p) p) (display $ installedPackageId p) p)
-                                     (packageName p) p
+      addOnePkg p e' = addToPkgEnvs (packageName p) p $
+                         addToPkgEnvs (display $ installedPackageId p) p $
+                         addToPkgEnvs (display $ sourcePackageId p) p e'
 
       -- if no version number specified, pick the higher version
-      addToPkgEnvs = addWithFM higherVersion
+      addToPkgEnvs = M.insertWith higherVersion
 
       higherVersion pkgconf1 pkgconf2
         | installedPackageId pkgconf1 >= installedPackageId pkgconf2 = pkgconf1
@@ -337,10 +321,10 @@ readPackageConf f = do
 -- application and we should therefore not link with any of the DLLs it requires.
 
 addStaticPkg :: PackageName -> IO ()
-addStaticPkg pkg = modifyStaticPkgEnv env $ \set -> return $ S.insert pkg set
+addStaticPkg pkg = modifyStaticPkgEnv $ \set -> return $ S.insert pkg set
 
 isStaticPkg :: PackageName -> IO Bool
-isStaticPkg pkg = withStaticPkgEnv env $ \set -> return $ S.member pkg set
+isStaticPkg pkg = withStaticPkgEnv $ \set -> return $ S.member pkg set
 
 --
 -- Package path, given a package name, look it up in the environment and
@@ -404,16 +388,16 @@ data HSLib = Static FilePath | Dynamic FilePath
 -- too.
 --
 lookupPkg' :: PackageName -> IO ([PackageName],([FilePath],[FilePath]))
-lookupPkg' p = withPkgEnvs env $ \fms -> go fms p
+lookupPkg' p = withPkgEnvs $ \es -> go es p
     where
         go [] _       = return ([],([],[]))
-        go (fm:fms) q = case lookupFM fm q of
-            Nothing -> go fms q     -- look in other pkgs
+        go (e:es) q = case M.lookup q e of
+            Nothing -> go es q     -- look in other pkgs
 
             Just pkg -> do
                 let    hslibs  = hsLibraries pkg
                        extras' = extraLibraries pkg
-                       cbits   = filter (\e -> reverse (take (length "_cbits") (reverse e)) == "_cbits") extras'
+                       cbits   = filter (isSuffixOf "_cbits") extras'
                        extras  = filter (flip notElem cbits) extras'
                        ldopts  = ldOptions pkg
                        deppkgs = packageDeps pkg
@@ -504,16 +488,16 @@ lookupPkg' p = withPkgEnvs env $ \fms -> go fms p
 -- do we have a Module name for this merge?
 --
 isMerged :: FilePath -> FilePath -> IO Bool
-isMerged a b = withMerged env $ \fm -> return $ isJust (lookupFM fm (a,b))
+isMerged a b = withMerged $ \e -> return $ isJust (M.lookup (a,b) e)
 
 lookupMerged :: FilePath -> FilePath -> IO (Maybe FilePath)
-lookupMerged a b = withMerged env $ \fm -> return $ lookupFM fm (a,b)
+lookupMerged a b = withMerged $ \e -> return $ M.lookup (a,b) e
 
 --
 -- insert a new merge pair into env
 --
 addMerge :: FilePath -> FilePath -> FilePath -> IO ()
-addMerge a b z = modifyMerged env $ \fm -> return $ addToFM fm (a,b) z
+addMerge a b z = modifyMerged $ \e -> return $ M.insert (a,b) z e
 
 ------------------------------------------------------------------------
 -- break a module cycle

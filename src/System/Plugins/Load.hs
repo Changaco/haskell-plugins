@@ -62,11 +62,11 @@ module System.Plugins.Load (
 
 #include "../../../config.h"
 
-import System.Plugins.Make             ( build )
 import System.Plugins.Env
 import System.Plugins.Utils
-import System.Plugins.Consts           ( sysPkgSuffix, hiSuf, prefixUnderscore )
+import System.Plugins.Consts      ( sysPkgSuffix, hiSuf, prefixUnderscore, ghc )
 import System.Plugins.LoadTypes
+import System.Plugins.Process     ( exec )
 
 -- import Language.Hi.Parser
 import BinIface
@@ -250,37 +250,23 @@ pdynload_ object incpaths pkgconfs args ty sym = do
 -- | run the typechecker over the constraint file
 --
 unify obj incs args ty sym = do
-        (tmpf,hdl)   <- mkTemp
-        (tmpf1,hdl1) <- mkTemp  -- and send .hi file here.
-        hClose hdl1
+        (tmpf,hdl) <- mkTemp
 
         let nm  = mkModid tmpf
-            src = mkTest nm (hierize' . mkModid . hierize $ obj)
-                                (fst $ break (=='.') ty) ty sym
+            src = mkTest nm (mkModid obj) (fst $ break (=='.') ty) ty sym
             is  = map ("-i"++) incs             -- api
             i   = "-i" ++ takeDirectory obj     -- plugin
 
         hPutStr hdl src >> hClose hdl
 
-        e <- build tmpf tmpf1 (i:is++args++["-fno-code","-ohi "++tmpf1])
-        mapM_ removeFile [tmpf,tmpf1]
-        return e
-
-        where
-            -- fix up hierarchical names
-            hierize []       = []
-            hierize ('/':cs) = '\\' : hierize cs
-            hierize (c:cs)   = c    : hierize cs
-
-            hierize'[]        = []
-            hierize' ('\\':cs) = '.' : hierize' cs
-            hierize' (c:cs)   = c    : hierize' cs
+        (_,err) <- exec ghc (tmpf:i:is++args++["-fno-code"])
+        removeFile tmpf
+        return err
 
 mkTest modnm plugin api ty sym =
        "module "++ modnm ++" where" ++
        "\nimport qualified " ++ plugin  ++
        "\nimport qualified " ++ api     ++
-       "{-# LINE 1 \"<typecheck>\" #-}" ++
        "\n_ = "++ plugin ++"."++ sym ++" :: "++ty
 
 ------------------------------------------------------------------------

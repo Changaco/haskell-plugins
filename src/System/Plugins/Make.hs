@@ -53,9 +53,6 @@ module System.Plugins.Make (
         makeClean,
         makeCleaner,
 
-        -- * Low-level compilation primitives
-        build, {- internal -}
-
   ) where
 
 import System.Plugins.Utils

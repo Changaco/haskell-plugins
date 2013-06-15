@@ -22,7 +22,8 @@
 module System.Plugins.Parser (
         parse, mergeModules, pretty, parsePragmas,
         HsModule(..) ,
-        replaceModName
+        replaceModName,
+        getModuleName
   ) where
 
 #include "../../../config.h"
@@ -237,3 +238,12 @@ maybePrefixMatch (_:_) []   = Nothing
 maybePrefixMatch (p:pat) (r:rest)
         | p == r    = maybePrefixMatch pat rest
         | otherwise = Nothing
+
+
+getModuleName :: FilePath -> IO String
+getModuleName path = do
+    src <- readFile path
+    let r = parse path src
+    either (\s -> error $ "parsing "++path++" failed:\n"++s)
+           (\(HsModule _ (Module name) _ _ _) -> return name)
+           r

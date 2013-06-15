@@ -23,7 +23,6 @@ module System.Plugins.Utils (
     mkTemp,
     findFile,
     mkModid,
-    outFilePath,
     isSublistOf,
     newer,
     handleDoesntExist,
@@ -34,15 +33,13 @@ module System.Plugins.Utils (
 
 #include "../../../config.h"
 
-import System.Plugins.Consts    ( objSuf )
-
 import Control.Exception        ( handleJust )
 import Data.Char
 import Data.List
 import Data.Maybe               ( fromMaybe )
 import System.Directory         ( doesFileExist, getModificationTime
                                 , getTemporaryDirectory )
-import System.FilePath          ( replaceExtension, dropExtensions, takeFileName, (</>) )
+import System.FilePath          ( replaceExtension, dropExtensions, takeFileName )
 import System.IO                ( Handle, openTempFile )
 import System.IO.Error          ( ioeGetFileName )
 
@@ -70,33 +67,6 @@ findFile (ext:exts) file
 -- | work out the mod name from a filepath
 mkModid :: String -> String
 mkModid = dropExtensions . takeFileName     -- not the same as takeBaseName
-
---
--- Normally we create the .hi and .o files next to the .hs files.
--- For some uses this is annoying (i.e. true EDSL users don't actually
--- want to know that their code is compiled at all), and for hmake-like
--- applications.
---
--- This code checks if "-o foo" or "-odir foodir" are supplied as args
--- to make(), and if so returns a modified file path, otherwise it
--- uses the source file to determing the path to where the object will be put.
---
-outFilePath :: FilePath -> [Arg] -> FilePath
-outFilePath src args =
-    case (o, odir) of
-         (Just p, _) -> p
-         (_, Just p) -> p </> mk_o (takeFileName src)
-         _           -> mk_o src
-    where
-        o    = find_opt "-o"    args -- user sets explicit object path
-        odir = find_opt "-odir" args -- user sets a directory to put stuff in
-
-        find_opt :: Arg -> [Arg] -> Maybe Arg  -- maybe the last value
-        find_opt = f Nothing
-        f r opt (a:b:cs) = f (if a == opt then Just b else r) opt cs
-        f r _ _ = r
-
-        mk_o  s = replaceExtension s objSuf
 
 ------------------------------------------------------------------------
 

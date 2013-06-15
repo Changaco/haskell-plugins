@@ -64,7 +64,7 @@ import System.Plugins.Env              ( lookupMerged, addMerge
                                        , getModuleDeps)
 
 import System.Directory    ( doesFileExist, removeFile )
-import System.FilePath     ( dropExtension, replaceExtension, takeDirectory )
+import System.FilePath     ( dropExtension, replaceExtension, takeDirectory, (</>) )
 import System.IO ( openFile, IOMode(..), hClose, hGetContents, openTempFile )
 
 --
@@ -241,17 +241,56 @@ rawMake :: FilePath        -- ^ src
         -> IO MakeStatus
 
 rawMake src args docheck = do
-    let obj = outFilePath src args
+    (obj,args') <- analyzeAndFixArgs src args
     maybe_changed <- handleDoesntExist (\_ -> return Nothing) $ fmap Just (src `newer` obj)
     case maybe_changed of
          Nothing -> return $ MakeFailure ["Source file does not exist: "++src]
          Just changed
              | docheck && not changed -> return $ MakeSuccess NotReq obj
              | otherwise -> do
-                    err <- build src obj args
+                    err <- build src obj args'
                     return $ if null err
                                 then MakeSuccess ReComp obj
                                 else MakeFailure err
+
+--
+-- | This function makes sure the "-odir" and "-hidir" args are the same. The
+-- .hi file needs to be in the same directory as the .o file in order for the
+-- loadDepends function to find it.
+--
+-- Returns the guessed path of the object file, and the modified args.
+--
+analyzeAndFixArgs :: FilePath -> [Arg] -> IO (FilePath,[Arg])
+analyzeAndFixArgs src args =
+    case (o, odir, hidir) of
+         (Just p, _, _) -> let d = takeDirectory p
+                           in return (p, args++["-odir",d,"-hidir",d])
+         (_, Just d, _) -> withDir d
+         (_, _, Just d) -> withDir d
+         (_, _, _)      -> return (mk_o src, args)
+    where
+        o     = find_opt "-o"     args -- user sets explicit object path
+        odir  = find_opt "-odir"  args -- user sets a directory to put .o in
+        hidir = find_opt "-hidir" args -- user sets a directory to put .hi in
+
+        withDir d = do
+            n <- getModuleName src
+            return (d </> mk_o (toPath n), args++["-hidir",d,"-odir",d])
+
+        toPath = map (\c -> if c == '.' then '/' else c)
+        mk_o s = replaceExtension s objSuf
+
+--
+-- | Maybe the last value of the given flag.
+--
+-- Example:
+-- > find_opt "-o" ["-i..","-o","Foo.o","-o","dist/Foo.o"]
+-- Just "dist/Foo.o"
+--
+find_opt :: Arg -> [Arg] -> Maybe Arg
+find_opt = f Nothing
+    where f r opt (a:b:cs) = f (if a == opt then Just b else r) opt cs
+          f r _ _ = r
 
 --
 -- | Lower-level than 'make'. Compile a .hs file to a .o file
@@ -264,19 +303,8 @@ build :: FilePath          -- ^ path to .hs source
       -> [String]          -- ^ any extra cmd line flags
       -> IO [String]
 
-build src obj extra_opts = do
-
-    let odir = takeDirectory obj -- always put the .hi file next to the .o file
-                                 -- does this work in the presence of hier plugins?
-                                 -- won't handle hier names properly.
-
-    let ghc_opts = [ "-O0" ]
-        output   = [ "-o", obj, "-odir", odir,
-                     "-hidir", odir, "-i" ++ odir ]
-        flags = ghc_opts ++ output ++ extra_opts ++ [src]
-
-    (_out,err) <- exec ghc flags       -- this is a fork()
-
+build src obj args = do
+    (_out,err) <- exec ghc (src:args)       -- this is a fork()
     obj_exists <- doesFileExist obj -- sanity
     return $ if not obj_exists && null err -- no errors, but no object?
              then ["Compiled, but didn't create object file `"++obj++"'!"]

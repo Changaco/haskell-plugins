@@ -241,7 +241,7 @@ rawMake :: FilePath        -- ^ src
         -> IO MakeStatus
 
 rawMake src args docheck = do
-    let (obj,_) = outFilePath src args
+    let obj = outFilePath src args
     maybe_changed <- handleDoesntExist (\_ -> return Nothing) $ fmap Just (src `newer` obj)
     case maybe_changed of
          Nothing -> return $ MakeFailure ["Source file does not exist: "++src]

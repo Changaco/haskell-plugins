@@ -34,7 +34,7 @@ module System.Plugins.Utils (
 
 #include "../../../config.h"
 
-import System.Plugins.Consts    ( objSuf, hiSuf )
+import System.Plugins.Consts    ( objSuf )
 
 import Control.Exception        ( handleJust )
 import Data.Char
@@ -79,31 +79,24 @@ mkModid = dropExtensions . takeFileName     -- not the same as takeBaseName
 --
 -- This code checks if "-o foo" or "-odir foodir" are supplied as args
 -- to make(), and if so returns a modified file path, otherwise it
--- uses the source file to determing the path to where the object and
--- .hi file will be put.
+-- uses the source file to determing the path to where the object will be put.
 --
-outFilePath :: FilePath -> [Arg] -> (FilePath,FilePath)
+outFilePath :: FilePath -> [Arg] -> FilePath
 outFilePath src args =
-    let objs  = find_opt "-o" args -- user sets explicit object path
-        paths = find_opt "-odir" args -- user sets a directory to put stuff in
-    in case () of { _
-        | not (null objs)
-        -> let obj = last objs in (obj, mk_hi obj)
-
-        | not (null paths)
-        -> let obj = last paths </> mk_o (takeFileName src) in (obj, mk_hi obj)
-
-        | otherwise
-        -> (mk_o src, mk_hi src)
-    }
+    case (o, odir) of
+         (Just p, _) -> p
+         (_, Just p) -> p </> mk_o (takeFileName src)
+         _           -> mk_o src
     where
-          mk_hi s = replaceExtension s hiSuf
-          mk_o  s = replaceExtension s objSuf
+        o    = find_opt "-o"    args -- user sets explicit object path
+        odir = find_opt "-odir" args -- user sets a directory to put stuff in
 
-          find_opt _ [] = []
-          find_opt opt (f:f':fs) | f == opt  = [f']
-                                 | otherwise = find_opt opt $! f':fs
-          find_opt _ _ = []
+        find_opt :: Arg -> [Arg] -> Maybe Arg  -- maybe the last value
+        find_opt = f Nothing
+        f r opt (a:b:cs) = f (if a == opt then Just b else r) opt cs
+        f r _ _ = r
+
+        mk_o  s = replaceExtension s objSuf
 
 ------------------------------------------------------------------------
 

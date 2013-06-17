@@ -381,41 +381,44 @@ data HSLib = Static FilePath | Dynamic FilePath
 -- too.
 --
 lookupPkg' :: PackageName -> IO ([PackageName],([FilePath],[FilePath]))
-lookupPkg' p = withPkgEnvs $ \es -> go es p
+lookupPkg' p = withPkgEnvs go
     where
-        go [] _       = return ([],([],[]))
-        go (e:es) q = case M.lookup q e of
-            Nothing -> go es q     -- look in other pkgs
+        go []     = return ([],([],[]))
+        go (e:es) = case M.lookup p e of
+            Nothing  -> go es     -- look in other pkgs
+            Just pkg -> findDeps pkg
 
-            Just pkg -> do
-                let    hslibs  = hsLibraries pkg
-                       extras' = extraLibraries pkg
-                       cbits   = filter (isSuffixOf "_cbits") extras'
-                       extras  = filter (flip notElem cbits) extras'
-                       ldopts  = ldOptions pkg
-                       deppkgs = map display $ depends pkg
-                let ldInput     = map classifyLdInput ldopts
-                    ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
-                    ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
-                    dlls        = map mkSOName (extras ++ ldOptsLibs)
+findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set (String,FilePath), S.Set FilePath)
+findDeps pkg = do
+    let hslibs  = hsLibraries pkg
+        extras' = extraLibraries pkg
+        cbits   = filter (isSuffixOf "_cbits") extras'
+        extras  = filter (flip notElem cbits) extras'
+        ldopts  = ldOptions pkg
+        deppkgs = map display $ depends pkg
+        ldInput     = map classifyLdInput ldopts
+        ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
+        ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
+        dlls        = map mkSOName (extras ++ ldOptsLibs)
 #if defined(CYGWIN) || defined(__MINGW32__)
-                    libdirs = fix_topdir (libraryDirs pkg) ++ ldOptsPaths
+        libdirs = fix_topdir (libraryDirs pkg) ++ ldOptsPaths
 #else
-                    libdirs = libraryDirs pkg ++ ldOptsPaths
+        libdirs = libraryDirs pkg ++ ldOptsPaths
 #endif
-                -- If we're loading dynamic libs we need the cbits to appear before the
-                -- real packages.
-                libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
+    -- If we're loading dynamic libs we need the cbits to appear before the
+    -- real packages.
+    libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
 #if defined(CYGWIN) || defined(__MINGW32__)
-                syslibdir <- getSystemDirectory
-                libs' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
+    syslibdir <- getSystemDirectory
+    dlls' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
 #else
-                libs' <- mapM (findFile' libdirs) dlls
+    dlls' <- mapM (findFile' libdirs) dlls
 #endif
-                let slibs = [ lib | Right (Static lib)  <- libs ]
-                    dlibs = [ lib | Right (Dynamic lib) <- libs ]
-                return (deppkgs, (slibs,libs' ++ dlibs))
+    let slibs = [ lib | Right (Static lib)  <- libs ]
+        dlibs = [ lib | Right (Dynamic lib) <- libs ]
+    return (deppkgs, (slibs,dlls' ++ dlibs))
 
+    where
 #if defined(CYGWIN) || defined(__MINGW32__)
         -- replace $topdir
         fix_topdir []        = []

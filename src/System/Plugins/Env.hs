@@ -54,11 +54,11 @@ module System.Plugins.Env (
 import System.Plugins.LoadTypes (Module)
 import System.Plugins.Consts           ( sysPkgSuffix )
 
-import Control.Monad            ( liftM, filterM )
+import Control.Monad            ( filterM, foldM )
 
 import Data.IORef               ( writeIORef, readIORef, newIORef, IORef() )
 import Data.Maybe               ( isJust, isNothing, fromMaybe )
-import Data.List                ( (\\), nub, isSuffixOf, partition )
+import Data.List                ( isSuffixOf, partition )
 
 import System.IO.Unsafe         ( unsafePerformIO )
 import System.Directory         ( findFile )
@@ -326,29 +326,32 @@ readPackageConf f = do
 -- up to loadObject not to load the same ones twice...
 --
 lookupPkg :: PackageName -> IO ([FilePath],[FilePath])
-lookupPkg pn = go [] pn
+lookupPkg pn = go S.empty pn >>= \(a, b) -> return (S.toList a, S.toList b)
     where
-      go :: [PackageName] -> PackageName -> IO ([FilePath],[FilePath])
       go seen p = do
-        (ps, (f, g)) <- lookupPkg' p
+        (ps, a, b) <- lookupPkg' p
         static <- isStaticPkg p
-        (f', g') <- liftM unzip $ mapM (go (nub $ seen ++ ps)) (ps \\ seen)
-        return $ (nub $ (concat f') ++ f, if static then [] else nub $ (concat g') ++ g)
+        let seen' = S.union seen ps
+            notSeenYet = S.toList $ S.difference ps seen
+            f (a',b') p' = go seen' p' >>= \(a'',b'') ->
+                return (S.union a' a'', S.union b' b'')
+        (a', b') <- foldM f (a,b) notSeenYet
+        return $ (a', if static then S.empty else b')
 
 --
 -- return any stuff to load for this package, plus the list of packages
 -- this package depends on. which includes stuff we have to then load
 -- too.
 --
-lookupPkg' :: PackageName -> IO ([PackageName],([FilePath],[FilePath]))
+lookupPkg' :: PackageName -> IO (S.Set PackageName, S.Set FilePath, S.Set FilePath)
 lookupPkg' p = withPkgEnvs go
     where
-        go []     = return ([],([],[]))
+        go []     = return (S.empty,S.empty,S.empty)
         go (e:es) = case M.lookup p e of
             Nothing  -> go es     -- look in other pkgs
             Just pkg -> findDeps pkg
 
-findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set (String,FilePath), S.Set FilePath)
+findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set FilePath, S.Set FilePath)
 findDeps pkg = do
     let hslibs  = hsLibraries pkg
         (cbits,extras) = partition (isSuffixOf "_cbits") (extraLibraries pkg)
@@ -369,7 +372,7 @@ findDeps pkg = do
 #else
     dlls' <- mapM (findFile' libdirs) dlls
 #endif
-    return (deppkgs, (slibs,dlls' ++ dlibs))
+    return (S.fromList deppkgs, S.fromList slibs, S.fromList $ dlls' ++ dlibs)
 
     where
 #if defined(CYGWIN) || defined(__MINGW32__)

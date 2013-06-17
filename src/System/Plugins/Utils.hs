@@ -28,7 +28,8 @@ module System.Plugins.Utils (
     handleDoesntExist,
     encode,
     decode,
-    EncodedString
+    EncodedString,
+    replace
   ) where
 
 #include "../../../config.h"
@@ -218,3 +219,11 @@ isSublistOf x y@(_:ys)
     | isPrefixOf x y = True
     | otherwise      = isSublistOf x ys
 
+
+-- | Replaces all instances of a value in a list by another value.
+replace :: Eq a =>
+           a   -- ^ Value to look for
+        -> a   -- ^ Value to replace it with
+        -> [a] -- ^ Input list
+        -> [a] -- ^ Output list
+replace a b = map (\c -> if c == a then b else c)

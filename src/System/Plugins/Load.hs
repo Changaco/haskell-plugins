@@ -556,8 +556,7 @@ loadDepends obj incpaths = do
 
                 -- now, try to generate a path to the actual .o file
                 -- fix up hierachical names
-                let mods_ = map (\s -> (s, map (\c ->
-                        if c == '.' then '/' else c) $ s)) ds'
+                let mods_ = map (\s -> (s, replace '.' '/' s)) ds'
 
                 -- construct a list of possible dependent modules to load
                 let mods = concatMap (\p ->

@@ -275,9 +275,8 @@ analyzeAndFixArgs src args =
 
         withDir d = do
             n <- getModuleName src
-            return (d </> mk_o (toPath n), args++["-hidir",d,"-odir",d])
+            return (d </> mk_o (replace '.' '/' n), args++["-hidir",d,"-odir",d])
 
-        toPath = map (\c -> if c == '.' then '/' else c)
         mk_o s = replaceExtension s objSuf
 
 --

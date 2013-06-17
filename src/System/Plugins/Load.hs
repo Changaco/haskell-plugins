@@ -68,7 +68,6 @@ import System.Plugins.Consts      ( sysPkgSuffix, hiSuf, prefixUnderscore, ghc )
 import System.Plugins.LoadTypes
 import System.Plugins.Process     ( exec )
 
--- import Language.Hi.Parser
 import BinIface
 import HscTypes
 import Module (moduleName, moduleNameString, packageIdString)
@@ -272,30 +271,6 @@ mkTest modnm plugin api ty sym =
 ------------------------------------------------------------------------
 {-
 --
--- old version that tried to rip stuff from .hi files
---
-pdynload obj incpaths pkgconfs sym ty = do
-        (m, v) <- load obj incpaths pkgconfs sym
-        ty'    <- mungeIface sym obj
-        if ty == ty'
-                then return $ Just (m, v)
-                else return Nothing             -- mismatched types
-
-   where
-        -- grab the iface output from GHC. find the line relevant to our
-        -- symbol. grab the string rep of the type.
-        mungeIface sym o = do
-                let hi = replaceExtension o hiSuf
-                (out,_) <- exec ghc ["--show-iface", hi]
-                case find (\s -> (sym ++ " :: ") `isPrefixOf` s) out of
-                        Nothing -> return undefined
-                        Just v  -> do let v' = drop 3 $ dropWhile (/= ':') v
-                                      return v'
-
--}
-
-{-
---
 -- a version of load the also unwraps and types a Dynamic object
 --
 dynload2 :: Typeable a =>
@@ -354,27 +329,6 @@ reload m@(Module{path = p, iface = hi}) sym = do
                 Nothing -> LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
                 Just a  -> LoadSuccess m' a
 
---
--- This is a stripped-down version of Andre Pang's runtime_loader,
--- which in turn is based on GHC's ghci\/ObjLinker.lhs binding
---
---  Load and unload\/Haskell modules at runtime.  This is not really
---  \'dynamic loading\', as such -- that implies that you\'re working
---  with proper shared libraries, whereas this is far more simple and
---  only loads object files.  But it achieves the same goal: you can
---  load a Haskell module at runtime, load a function from it, and run
---  the function.  I have no idea if this works for types, but that
---  doesn\'t mean that you can\'t try it :).
---
--- read $fptools\/ghc\/compiler\/ghci\/ObjLinker.lhs for how to use this stuff
---
-
-
--- | Call the initLinker function first, before calling any of the other
--- functions in this module - otherwise you\'ll get unresolved symbols.
-
--- initLinker :: IO ()
--- our initLinker transparently calls the one in GHC
 
 --
 -- | Load a function from a module (which must be loaded and resolved first).

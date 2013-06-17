@@ -72,7 +72,6 @@ import Distribution.Package hiding (depends, packageName, PackageName(..))
 import Distribution.Text
 
 import Distribution.InstalledPackageInfo
--- import Distribution.Package hiding (packageName, PackageName(..))
 import Distribution.Simple.Compiler
 import Distribution.Simple.GHC
 import Distribution.Simple.PackageIndex
@@ -201,8 +200,6 @@ addModule :: String -> Module -> IO ()
 addModule s m = modifyModEnv $ \e -> let c = maybe 0 snd (M.lookup s e)
                                      in return $ M.insert s (m,c+1) e
 
---getModule :: String -> IO (Maybe Module)
---getModule s = withModEnv $ \e -> return (M.lookup s e)
 
 --
 -- | remove a module name from the environment. Returns True if the

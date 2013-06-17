@@ -56,9 +56,6 @@ import System.IO                ( hClose, hFlush, hPutStr )
 import System.IO.Unsafe
 import System.Random
 
--- import Foreign.C
--- import Foreign
-
 type Import = String
 
 symbol :: Symbol

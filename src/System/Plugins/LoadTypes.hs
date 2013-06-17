@@ -28,8 +28,6 @@ module System.Plugins.LoadTypes
     , ObjType (..)
     ) where
 
--- import Language.Hi.Parser
-
 import HscTypes
 
 data Key = Object String | Package String

@@ -1,17 +1,7 @@
 module Plugin where
 
--- user doesn't import the API
--- and provides a polymorphic value
-
--- import API
--- resource :: Interface
-
---
+-- doesn't import the API and provides a polymorphic value
 -- should pass type check, and dump core
---
--- resource :: Num a => a
-
--- import API
 
 resource :: Num a => a
 resource = 7

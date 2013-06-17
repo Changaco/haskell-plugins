@@ -58,7 +58,7 @@ import Control.Monad            ( liftM, filterM )
 
 import Data.IORef               ( writeIORef, readIORef, newIORef, IORef() )
 import Data.Maybe               ( isJust, isNothing, fromMaybe )
-import Data.List                ( (\\), nub, isSuffixOf )
+import Data.List                ( (\\), nub, isSuffixOf, partition )
 
 import System.IO.Unsafe         ( unsafePerformIO )
 import System.Directory         ( findFile )
@@ -391,9 +391,7 @@ lookupPkg' p = withPkgEnvs go
 findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set (String,FilePath), S.Set FilePath)
 findDeps pkg = do
     let hslibs  = hsLibraries pkg
-        extras' = extraLibraries pkg
-        cbits   = filter (isSuffixOf "_cbits") extras'
-        extras  = filter (flip notElem cbits) extras'
+        (cbits,extras) = partition (isSuffixOf "_cbits") (extraLibraries pkg)
         ldopts  = ldOptions pkg
         deppkgs = map display $ depends pkg
         ldInput     = map classifyLdInput ldopts

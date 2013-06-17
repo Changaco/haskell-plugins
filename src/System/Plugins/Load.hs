@@ -459,6 +459,8 @@ unloadObj (Module { path = p, kind = k, key = ky }) = case k of
                                     when (not r) (error "unloadObj: failed")
         Shared  -> return () -- can't unload .so?
     where name = case ky of Object s -> s ; Package pk -> pk
+
+
 --
 -- | from ghci\/ObjLinker.c
 --

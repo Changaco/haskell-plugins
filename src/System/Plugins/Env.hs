@@ -271,14 +271,12 @@ addPkgConf f = do
 -- GHC 6.12)
 --
 union :: PkgEnvs -> [PackageConfig] -> PkgEnvs
-union ls ps' =
-        let e = M.empty -- new Map for this package.conf
-        in foldr addOnePkg e ps' : ls
+union ls ps = foldr addOnePkg M.empty ps : ls
     where
       -- we add each package with and without it's version number and with the full installedPackageId
       addOnePkg p e' = addToPkgEnvs (packageName p) p $
-                         addToPkgEnvs (display $ installedPackageId p) p $
-                         addToPkgEnvs (display $ sourcePackageId p) p e'
+                       addToPkgEnvs (display $ installedPackageId p) p $
+                       addToPkgEnvs (display $ sourcePackageId p) p e'
 
       -- if no version number specified, pick the higher version
       addToPkgEnvs = M.insertWith higherVersion
@@ -309,16 +307,6 @@ readPackageConf f = do
     pkgIndex <- getInstalledPackages silent [GlobalPackageDB, UserPackageDB, SpecificPackageDB f] pc
     return $ allPackages pkgIndex
 
--- -----------------------------------------------------------
--- Static package management stuff. A static package is linked with the base
--- application and we should therefore not link with any of the DLLs it requires.
-
-addStaticPkg :: PackageName -> IO ()
-addStaticPkg pkg = modifyStaticPkgEnv $ \set -> return $ S.insert pkg set
-
-isStaticPkg :: PackageName -> IO Bool
-isStaticPkg pkg = withStaticPkgEnv $ \set -> return $ S.member pkg set
-
 --
 -- Package path, given a package name, look it up in the environment and
 -- return the path to all the libraries needed to load this package.
@@ -347,6 +335,79 @@ lookupPkg pn = go [] pn
         (f', g') <- liftM unzip $ mapM (go (nub $ seen ++ ps)) (ps \\ seen)
         return $ (nub $ (concat f') ++ f, if static then [] else nub $ (concat g') ++ g)
 
+--
+-- return any stuff to load for this package, plus the list of packages
+-- this package depends on. which includes stuff we have to then load
+-- too.
+--
+lookupPkg' :: PackageName -> IO ([PackageName],([FilePath],[FilePath]))
+lookupPkg' p = withPkgEnvs go
+    where
+        go []     = return ([],([],[]))
+        go (e:es) = case M.lookup p e of
+            Nothing  -> go es     -- look in other pkgs
+            Just pkg -> findDeps pkg
+
+findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set (String,FilePath), S.Set FilePath)
+findDeps pkg = do
+    let hslibs  = hsLibraries pkg
+        (cbits,extras) = partition (isSuffixOf "_cbits") (extraLibraries pkg)
+        deppkgs = map display $ depends pkg
+        ldInput = map classifyLdInput $ ldOptions pkg
+        ldOptsLibs  = [ name | Just (DLL name) <- ldInput ]
+        ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
+        dlls        = map mkSOName (extras ++ ldOptsLibs)
+        libdirs = fix_topdir (libraryDirs pkg) ++ ldOptsPaths
+    -- If we're loading dynamic libs we need the cbits to appear before the
+    -- real packages.
+    libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
+    let slibs = [ lib | Right (Static lib)  <- libs ]
+        dlibs = [ lib | Right (Dynamic lib) <- libs ]
+#if defined(CYGWIN) || defined(__MINGW32__)
+    syslibdir <- getSystemDirectory
+    dlls' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
+#else
+    dlls' <- mapM (findFile' libdirs) dlls
+#endif
+    return (deppkgs, (slibs,dlls' ++ dlibs))
+
+    where
+#if defined(CYGWIN) || defined(__MINGW32__)
+        -- replace $topdir
+        fix_topdir []        = []
+        fix_topdir (x:xs)    = replace_topdir x : fix_topdir xs
+
+        replace_topdir []           = []
+        replace_topdir ('$':xs)
+            | take 6 xs == "topdir" = ghcLibraryPath ++ (drop 6 xs)
+            | otherwise             = '$' : replace_topdir xs
+        replace_topdir (x:xs)       = x : replace_topdir xs
+#else
+        fix_topdir = id
+#endif
+
+        -- Problem: sysPkgSuffix  is ".o", but extra libraries could be ".so"
+        -- Solution: first look for static library, if we don't find it, look
+        -- for a dynamic version.
+        findHSlib :: [FilePath] -> FilePath -> IO (Either String HSLib)
+        findHSlib dirs lib = do
+            static <- findHSslib dirs lib
+            case static of
+                Just file -> return $ Right $ Static file
+                Nothing   -> do
+                    dynamic <- findHSdlib dirs lib
+                    case dynamic of
+                        Just file -> return $ Right $ Dynamic file
+                        Nothing   -> return $ Left lib
+
+        findHSslib dirs lib = findFile dirs $ lib ++ sysPkgSuffix
+        findHSdlib dirs lib = findFile dirs $ mkDynPkgName lib
+
+        findFile' :: [FilePath] -> FilePath -> IO FilePath
+        findFile' ds f = maybe f id `fmap` findFile ds f
+
+data HSLib = Static FilePath | Dynamic FilePath
+
 data LibrarySpec
    = DLL String         -- -lLib
    | DLLPath FilePath   -- -Lpath
@@ -373,81 +434,15 @@ mkDynPkgName root = mkSOName (root ++ "_dyn")
 mkDynPkgName root = mkSOName root
 #endif
 
-data HSLib = Static FilePath | Dynamic FilePath
+-- -----------------------------------------------------------
+-- Static package management stuff. A static package is linked with the base
+-- application and we should therefore not link with any of the DLLs it requires.
 
---
--- return any stuff to load for this package, plus the list of packages
--- this package depends on. which includes stuff we have to then load
--- too.
---
-lookupPkg' :: PackageName -> IO ([PackageName],([FilePath],[FilePath]))
-lookupPkg' p = withPkgEnvs go
-    where
-        go []     = return ([],([],[]))
-        go (e:es) = case M.lookup p e of
-            Nothing  -> go es     -- look in other pkgs
-            Just pkg -> findDeps pkg
+addStaticPkg :: PackageName -> IO ()
+addStaticPkg pkg = modifyStaticPkgEnv $ \set -> return $ S.insert pkg set
 
-findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set (String,FilePath), S.Set FilePath)
-findDeps pkg = do
-    let hslibs  = hsLibraries pkg
-        (cbits,extras) = partition (isSuffixOf "_cbits") (extraLibraries pkg)
-        ldopts  = ldOptions pkg
-        deppkgs = map display $ depends pkg
-        ldInput     = map classifyLdInput ldopts
-        ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
-        ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
-        dlls        = map mkSOName (extras ++ ldOptsLibs)
-#if defined(CYGWIN) || defined(__MINGW32__)
-        libdirs = fix_topdir (libraryDirs pkg) ++ ldOptsPaths
-#else
-        libdirs = libraryDirs pkg ++ ldOptsPaths
-#endif
-    -- If we're loading dynamic libs we need the cbits to appear before the
-    -- real packages.
-    libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
-#if defined(CYGWIN) || defined(__MINGW32__)
-    syslibdir <- getSystemDirectory
-    dlls' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
-#else
-    dlls' <- mapM (findFile' libdirs) dlls
-#endif
-    let slibs = [ lib | Right (Static lib)  <- libs ]
-        dlibs = [ lib | Right (Dynamic lib) <- libs ]
-    return (deppkgs, (slibs,dlls' ++ dlibs))
-
-    where
-#if defined(CYGWIN) || defined(__MINGW32__)
-        -- replace $topdir
-        fix_topdir []        = []
-        fix_topdir (x:xs)    = replace_topdir x : fix_topdir xs
-
-        replace_topdir []           = []
-        replace_topdir ('$':xs)
-            | take 6 xs == "topdir" = ghcLibraryPath ++ (drop 6 xs)
-            | otherwise             = '$' : replace_topdir xs
-        replace_topdir (x:xs)       = x : replace_topdir xs
-#endif
-
-        -- Problem: sysPkgSuffix  is ".o", but extra libraries could be ".so"
-        -- Solution: first look for static library, if we don't find it, look
-        -- for a dynamic version.
-        findHSlib :: [FilePath] -> FilePath -> IO (Either String HSLib)
-        findHSlib dirs lib = do
-            static <- findHSslib dirs lib
-            case static of
-                Just file -> return $ Right $ Static file
-                Nothing   -> do
-                    dynamic <- findHSdlib dirs lib
-                    case dynamic of
-                        Just file -> return $ Right $ Dynamic file
-                        Nothing   -> return $ Left lib
-
-        findHSslib dirs lib = findFile dirs $ lib ++ sysPkgSuffix
-        findHSdlib dirs lib = findFile dirs $ mkDynPkgName lib
-
-        findFile' :: [FilePath] -> FilePath -> IO FilePath
-        findFile' ds f = maybe f id `fmap` findFile ds f
+isStaticPkg :: PackageName -> IO Bool
+isStaticPkg pkg = withStaticPkgEnv $ \set -> return $ S.member pkg set
 
 ------------------------------------------------------------------------
 -- do we have a Module name for this merge?

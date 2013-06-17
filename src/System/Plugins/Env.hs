@@ -63,8 +63,7 @@ import Data.List                ( (\\), nub, isSuffixOf )
 import System.IO.Unsafe         ( unsafePerformIO )
 import System.Directory         ( doesFileExist )
 #if defined(CYGWIN) || defined(__MINGW32__)
-import Prelude hiding ( catch, ioError )
-import System.IO.Error          ( catch, ioError, isDoesNotExistError )
+import System.Win32.Info        ( getSystemDirectory )
 #endif
 
 import Control.Concurrent.MVar  ( MVar(), newMVar, withMVar )
@@ -411,16 +410,8 @@ lookupPkg' p = withPkgEnvs $ \es -> go es p
                 -- real packages.
                 libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
 #if defined(CYGWIN) || defined(__MINGW32__)
-                windowsos <- catch (getEnv "OS")
-                           (\e -> if isDoesNotExistError e then return "Windows_98" else ioError e)
-                windowsdir <-
-                    if windowsos == "Windows_9X" -- I don't know Windows 9X has OS system variable
-                      then return "C:/windows"
-                      else return "C:/winnt"
-                sysroot <- catch (getEnv "SYSTEMROOT")
-                           (\e -> if isDoesNotExistError e then return windowsdir else ioError e) -- guess at a reasonable default
-                let syslibdir = sysroot ++ (if windowsos == "Windows_9X" then "/SYSTEM" else "/SYSTEM32")
-                libs' <- mapM (findDLL $ syslibdir : libdirs) dlls
+                syslibdir <- getSystemDirectory
+                libs' <- mapM (findDLL $ syslibdir ++ libdirs) dlls
 #else
                 libs' <- mapM (findDLL libdirs) dlls
 #endif

@@ -393,7 +393,7 @@ lookupPkg' p = withPkgEnvs $ \es -> go es p
                        cbits   = filter (isSuffixOf "_cbits") extras'
                        extras  = filter (flip notElem cbits) extras'
                        ldopts  = ldOptions pkg
-                       deppkgs = packageDeps pkg
+                       deppkgs = map display $ depends pkg
                 let ldInput     = map classifyLdInput ldopts
                     ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
                     ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
@@ -474,7 +474,6 @@ addMerge a b z = modifyMerged $ \e -> return $ M.insert (a,b) z e
 
 
 packageName    :: PackageConfig -> PackageName
-packageDeps    :: PackageConfig -> [PackageName]
 -- updImportDirs  :: ([FilePath] -> [FilePath]) -> PackageConfig -> PackageConfig
 -- updLibraryDirs :: ([FilePath] -> [FilePath]) -> PackageConfig -> PackageConfig
 
@@ -485,7 +484,6 @@ type PackageConfig = InstalledPackageInfo
 
 packageName = display . pkgName . sourcePackageId
 -- packageName_ = pkgName . sourcePackageId
-packageDeps = (map display) . depends
 
 {-
 updImportDirs f pk@(InstalledPackageInfo { importDirs = idirs }) =

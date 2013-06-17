@@ -351,10 +351,10 @@ data LibrarySpec
    = DLL String         -- -lLib
    | DLLPath FilePath   -- -Lpath
 
-classifyLdInput :: FilePath -> IO (Maybe LibrarySpec)
-classifyLdInput ('-':'l':lib) = return (Just (DLL lib))
-classifyLdInput ('-':'L':path) = return (Just (DLLPath path))
-classifyLdInput _ = return Nothing
+classifyLdInput :: FilePath -> Maybe LibrarySpec
+classifyLdInput ('-':'l':lib) = Just (DLL lib)
+classifyLdInput ('-':'L':path) = Just (DLLPath path)
+classifyLdInput _ = Nothing
 
 -- TODO need to define a MAC\/DARWIN symbol
 #if defined(MACOSX)
@@ -394,8 +394,8 @@ lookupPkg' p = withPkgEnvs $ \es -> go es p
                        extras  = filter (flip notElem cbits) extras'
                        ldopts  = ldOptions pkg
                        deppkgs = packageDeps pkg
-                ldInput <- mapM classifyLdInput ldopts
-                let ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
+                let ldInput     = map classifyLdInput ldopts
+                    ldOptsLibs  = [ path | Just (DLL path) <- ldInput ]
                     ldOptsPaths = [ path | Just (DLLPath path) <- ldInput ]
                     dlls        = map mkSOName (extras ++ ldOptsLibs)
 #if defined(CYGWIN) || defined(__MINGW32__)

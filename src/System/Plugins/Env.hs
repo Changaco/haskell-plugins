@@ -61,7 +61,7 @@ import Data.Maybe               ( isJust, isNothing, fromMaybe )
 import Data.List                ( (\\), nub, isSuffixOf )
 
 import System.IO.Unsafe         ( unsafePerformIO )
-import System.Directory         ( doesFileExist )
+import System.Directory         ( findFile )
 #if defined(CYGWIN) || defined(__MINGW32__)
 import System.Win32.Info        ( getSystemDirectory )
 #endif
@@ -408,13 +408,13 @@ lookupPkg' p = withPkgEnvs $ \es -> go es p
                 libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
 #if defined(CYGWIN) || defined(__MINGW32__)
                 syslibdir <- getSystemDirectory
-                libs' <- mapM (findDLL $ syslibdir ++ libdirs) dlls
+                libs' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
 #else
-                libs' <- mapM (findDLL libdirs) dlls
+                libs' <- mapM (findFile' libdirs) dlls
 #endif
                 let slibs = [ lib | Right (Static lib)  <- libs ]
                     dlibs = [ lib | Right (Dynamic lib) <- libs ]
-                return (deppkgs, (slibs,map (either id id) libs' ++ dlibs) )
+                return (deppkgs, (slibs,libs' ++ dlibs))
 
 #if defined(CYGWIN) || defined(__MINGW32__)
         -- replace $topdir
@@ -427,47 +427,26 @@ lookupPkg' p = withPkgEnvs $ \es -> go es p
             | otherwise             = '$' : replace_topdir xs
         replace_topdir (x:xs)       = x : replace_topdir xs
 #endif
-        -- a list elimination form for the Maybe type
-        --filterRight :: [Either left right] -> [right]
-        --filterRight []           = []
-        --filterRight (Right x:xs) = x:filterRight xs
-        --filterRight (Left _:xs)  =   filterRight xs
 
-        --
-        -- Check that a path to a library actually reaches a library
-        findHSlib' :: [FilePath] -> String -> IO (Maybe FilePath)
-        findHSlib' [] _           = return Nothing
-        findHSlib' (dir:dirs) lib = do
-                  let l = dir </> lib
-                  b <- doesFileExist l
-                  if b then return $ Just l     -- found it!
-                       else findHSlib' dirs lib
-
-        findHSslib dirs lib = findHSlib' dirs $ lib ++ sysPkgSuffix
-        findHSdlib dirs lib = findHSlib' dirs $ mkDynPkgName lib
-
-        -- Problem: sysPkgSuffix  is ".o", but extra libraries could be
-        -- ".so"
-        -- Solution: first look for static library, if we don't find it
-        -- look for a dynamic version.
-        findHSlib :: [FilePath] -> String -> IO (Either String HSLib)
+        -- Problem: sysPkgSuffix  is ".o", but extra libraries could be ".so"
+        -- Solution: first look for static library, if we don't find it, look
+        -- for a dynamic version.
+        findHSlib :: [FilePath] -> FilePath -> IO (Either String HSLib)
         findHSlib dirs lib = do
             static <- findHSslib dirs lib
             case static of
                 Just file -> return $ Right $ Static file
-                Nothing	  -> do
+                Nothing   -> do
                     dynamic <- findHSdlib dirs lib
                     case dynamic of
                         Just file -> return $ Right $ Dynamic file
-                        Nothing	  -> return $ Left lib
+                        Nothing   -> return $ Left lib
 
-        findDLL :: [FilePath] -> String -> IO (Either String FilePath)
-        findDLL [] lib         = return (Left lib)
-        findDLL (dir:dirs) lib = do
-                 let l = dir </> lib
-                 b <- doesFileExist l
-                 if b then return $ Right l
-                      else findDLL dirs lib
+        findHSslib dirs lib = findFile dirs $ lib ++ sysPkgSuffix
+        findHSdlib dirs lib = findFile dirs $ mkDynPkgName lib
+
+        findFile' :: [FilePath] -> FilePath -> IO FilePath
+        findFile' ds f = maybe f id `fmap` findFile ds f
 
 ------------------------------------------------------------------------
 -- do we have a Module name for this merge?
@@ -483,14 +462,6 @@ lookupMerged a b = withMerged $ \e -> return $ M.lookup (a,b) e
 --
 addMerge :: FilePath -> FilePath -> FilePath -> IO ()
 addMerge a b z = modifyMerged $ \e -> return $ M.insert (a,b) z e
-
-------------------------------------------------------------------------
--- break a module cycle
--- private:
---
-(</>) :: FilePath -> FilePath -> FilePath
-[] </> b = b
-a  </> b = a ++ "/" ++ b
 
 
 ------------------------------------------------------------------------

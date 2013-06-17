@@ -46,7 +46,7 @@ library
                           haskell-src,
                           containers,
                           array,
-                          directory,
+                          directory >= 1.2.0.0,
                           filepath,
                           random,
                           process,

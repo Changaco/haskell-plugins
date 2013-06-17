@@ -32,7 +32,7 @@ module System.Plugins.Env (
         rmModule,
         addModules,
         isLoaded,
-        loaded,
+        filterLoaded,
         addModuleDeps,
         getModuleDeps,
         rmModuleDeps,
@@ -54,7 +54,7 @@ module System.Plugins.Env (
 import System.Plugins.LoadTypes (Module)
 import System.Plugins.Consts           ( sysPkgSuffix )
 
-import Control.Monad            ( liftM )
+import Control.Monad            ( liftM, filterM )
 
 import Data.IORef               ( writeIORef, readIORef, newIORef, IORef() )
 import Data.Maybe               ( isJust, isNothing, fromMaybe )
@@ -229,11 +229,8 @@ addModules ns = mapM_ (uncurry addModule) ns
 isLoaded :: String -> IO Bool
 isLoaded s = withModEnv $ \e -> return $ isJust (M.lookup s e)
 
---
--- confusing! only for filter.
---
-loaded :: String -> IO Bool
-loaded m = do t <- isLoaded m ; return (not t)
+filterLoaded :: [String] -> IO [String]
+filterLoaded = filterM (fmap not . isLoaded)
 
 -- -----------------------------------------------------------
 --

@@ -596,7 +596,7 @@ loadDepends obj incpaths = do
                 let ds = mi_deps hiface
 
                 -- remove ones that we've already loaded
-                ds' <- filterM loaded . map (moduleNameString . fst) . dep_mods $ ds
+                ds' <- filterLoaded . map (moduleNameString . fst) . dep_mods $ ds
 
                 -- now, try to generate a path to the actual .o file
                 -- fix up hierachical names
@@ -617,9 +617,9 @@ loadDepends obj incpaths = do
                 -- and find some packages to load, as well.
                 let ps = dep_pkgs ds
 #if MIN_VERSION_ghc(7,2,0)
-                ps' <- filterM loaded . map packageIdString . nub $ map fst ps
+                ps' <- filterLoaded . map packageIdString . nub $ map fst ps
 #else
-                ps' <- filterM loaded . map packageIdString . nub $ ps
+                ps' <- filterLoaded . map packageIdString . nub $ ps
 #endif
 
                 mapM_ loadPackage ps'

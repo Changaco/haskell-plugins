@@ -21,7 +21,7 @@
 module System.Plugins.Utils (
     Arg,
     mkTemp,
-    findFile,
+    tryExtensions,
     mkModid,
     isSublistOf,
     newer,
@@ -56,13 +56,13 @@ mkTemp :: IO (FilePath, Handle)
 mkTemp = getTemporaryDirectory >>= \tmpd -> openTempFile tmpd "MXXXXX.hs"
 
 
-findFile :: [String] -> FilePath -> IO (Maybe FilePath)
-findFile [] _  = return Nothing
-findFile (ext:exts) file
-    = do let l = replaceExtension file ext
-         b <- doesFileExist l
-         if b then return $ Just l
-              else findFile exts file
+tryExtensions :: [String] -> FilePath -> IO (Maybe FilePath)
+tryExtensions [] _  = return Nothing
+tryExtensions (ext:exts) file = do
+    let l = replaceExtension file ext
+    b <- doesFileExist l
+    if b then return $ Just l
+         else tryExtensions exts file
 
 --
 -- | work out the mod name from a filepath

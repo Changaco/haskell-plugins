@@ -185,7 +185,7 @@ hasChanged = hasChanged' ["hs","lhs"]
 
 hasChanged' :: [String] -> Module -> IO Bool
 hasChanged' suffices m@(Module {path = obj}) = do
-    mbSrc <- findFile suffices obj
+    mbSrc <- tryExtensions suffices obj
     case mbSrc of
          Nothing -> return True
          Just src -> do
@@ -211,7 +211,7 @@ recompileAll' suffices m args = do
     changed <- hasChanged m
     if changed
         then do
-            mbSource <- findFile suffices (path m)
+            mbSource <- tryExtensions suffices (path m)
             case mbSource of
                 Nothing
                     -> error $ "Couldn't find source for object file: " ++ path m

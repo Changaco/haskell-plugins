@@ -41,8 +41,6 @@ module System.Plugins.Env (
         addMerge,
         addPkgConf,
         union,
-        addStaticPkg,
-        isStaticPkg,
         grabDefaultPkgConf,
         readPackageConf,
         lookupPkg
@@ -118,8 +116,6 @@ type DepEnv = Map Module [Module]
 -- represents a package.conf file
 type PkgEnv  = Map PackageName PackageConfig
 
-type StaticPkgEnv = S.Set PackageName
-
 -- record dependencies between (src,stub) -> merged modid
 type MergeEnv = Map (FilePath,FilePath) FilePath
 
@@ -131,7 +127,6 @@ data Env = Env {
     envMod :: IORef ModEnv,
     envDep :: IORef DepEnv,
     envPkg :: IORef PkgEnvs,
-    envStaticPkg :: IORef StaticPkgEnv,
     envMerged :: IORef MergeEnv
 }
 
@@ -147,11 +142,8 @@ env = unsafePerformIO $ do
     ref2  <- newIORef M.empty
     p     <- grabDefaultPkgConf
     ref3  <- newIORef p               -- package.conf info
-    ref4  <- newIORef (S.fromList ["base","Cabal","haskell-src", "containers",
-                                    "arrays", "directory", "random", "process",
-                                    "ghc", "ghc-prim"])
-    ref5  <- newIORef M.empty         -- merged files
-    return $ Env mvar ref1 ref2 ref3 ref4 ref5
+    ref4  <- newIORef M.empty         -- merged files
+    return $ Env mvar ref1 ref2 ref3 ref4
 {-# NOINLINE env #-}
 
 -- -----------------------------------------------------------
@@ -163,14 +155,12 @@ env = unsafePerformIO $ do
 withModEnv  :: (ModEnv   -> IO a) -> IO a
 withDepEnv  :: (DepEnv   -> IO a) -> IO a
 withPkgEnvs :: (PkgEnvs  -> IO a) -> IO a
-withStaticPkgEnv :: (StaticPkgEnv -> IO a) -> IO a
 withMerged  :: (MergeEnv -> IO a) -> IO a
 
 withEnv f = withMVar (envMVar env) $ const f
 withModEnv  f = withEnv (readIORef (envMod env) >>= f)
 withDepEnv  f = withEnv (readIORef (envDep env) >>= f)
 withPkgEnvs f = withEnv (readIORef (envPkg env) >>= f)
-withStaticPkgEnv f = withEnv (readIORef (envStaticPkg env) >>= f)
 withMerged  f = withEnv (readIORef (envMerged env) >>= f)
 
 -- -----------------------------------------------------------
@@ -181,13 +171,11 @@ withMerged  f = withEnv (readIORef (envMerged env) >>= f)
 modifyModEnv :: (ModEnv   -> IO ModEnv)  -> IO ()
 modifyDepEnv :: (DepEnv   -> IO DepEnv)  -> IO ()
 modifyPkgEnv :: (PkgEnvs  -> IO PkgEnvs) -> IO ()
-modifyStaticPkgEnv :: (StaticPkgEnv  -> IO StaticPkgEnv) -> IO ()
 modifyMerged :: (MergeEnv -> IO MergeEnv)-> IO ()
 
 modifyModEnv f = lockAndWrite (envMod env) f
 modifyDepEnv f = lockAndWrite (envDep env) f
 modifyPkgEnv f = lockAndWrite (envPkg env) f
-modifyStaticPkgEnv f = lockAndWrite (envStaticPkg env) f
 modifyMerged f = lockAndWrite (envMerged env) f
 
 lockAndWrite ref f = withEnv (readIORef ref >>= f >>= writeIORef ref)
@@ -330,13 +318,11 @@ lookupPkg pn = go S.empty pn >>= \(a, b) -> return (S.toList a, S.toList b)
     where
       go seen p = do
         (ps, a, b) <- lookupPkg' p
-        static <- isStaticPkg p
         let seen' = S.union seen ps
             notSeenYet = S.toList $ S.difference ps seen
             f (a',b') p' = go seen' p' >>= \(a'',b'') ->
                 return (S.union a' a'', S.union b' b'')
-        (a', b') <- foldM f (a,b) notSeenYet
-        return $ (a', if static then S.empty else b')
+        foldM f (a,b) notSeenYet
 
 --
 -- return any stuff to load for this package, plus the list of packages
@@ -436,16 +422,6 @@ mkDynPkgName root = mkSOName (root ++ "_dyn")
 #else
 mkDynPkgName root = mkSOName root
 #endif
-
--- -----------------------------------------------------------
--- Static package management stuff. A static package is linked with the base
--- application and we should therefore not link with any of the DLLs it requires.
-
-addStaticPkg :: PackageName -> IO ()
-addStaticPkg pkg = modifyStaticPkgEnv $ \set -> return $ S.insert pkg set
-
-isStaticPkg :: PackageName -> IO Bool
-isStaticPkg pkg = withStaticPkgEnv $ \set -> return $ S.member pkg set
 
 ------------------------------------------------------------------------
 -- do we have a Module name for this merge?

@@ -22,7 +22,7 @@ module System.Plugins.Utils (
     Arg,
     mkTemp,
     tryExtensions,
-    mkModid,
+    takeBaseName',
     isSublistOf,
     newer,
     handleDoesntExist,
@@ -64,10 +64,9 @@ tryExtensions (ext:exts) file = do
     if b then return $ Just l
          else tryExtensions exts file
 
---
--- | work out the mod name from a filepath
-mkModid :: String -> String
-mkModid = dropExtensions . takeFileName     -- not the same as takeBaseName
+
+takeBaseName' :: String -> String
+takeBaseName' = dropExtensions . takeFileName
 
 ------------------------------------------------------------------------
 

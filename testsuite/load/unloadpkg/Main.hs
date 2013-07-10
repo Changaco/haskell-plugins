@@ -1,6 +1,6 @@
 
 import System.Plugins
 
-main = do loadPackage "posix"
-          unloadPackage  "posix"
-          loadPackage "posix"
+main = do loadPackage "base"
+          unloadPackage  "base"
+          loadPackage "base"

@@ -150,7 +150,7 @@ unsafeEval_ = rawEval wrap load
 rawEval wrapper loader src imps args ldflags incs = do
     pwd <- getCurrentDirectory
     (tmpf,tmph) <- mkTemp
-    hPutStr tmph $ wrapper src (mkModid tmpf) imps
+    hPutStr tmph $ wrapper src (takeBaseName' tmpf) imps
     hFlush tmph >> hClose tmph
     status <- make tmpf args
     case status of

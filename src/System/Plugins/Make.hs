@@ -57,7 +57,7 @@ module System.Plugins.Make (
 
 import System.Plugins.Utils
 import System.Plugins.Parser
-import System.Plugins.LoadTypes        ( Module (Module, path) )
+import System.Plugins.LoadTypes        ( Module(..) )
 import System.Plugins.Consts           ( ghc, hiSuf, objSuf, hsSuf )
 import System.Plugins.Process          ( exec )
 import System.Plugins.Env              ( lookupMerged, addMerge
@@ -184,7 +184,7 @@ hasChanged :: Module -> IO Bool
 hasChanged = hasChanged' ["hs","lhs"]
 
 hasChanged' :: [String] -> Module -> IO Bool
-hasChanged' suffices m@(Module {path = obj}) = do
+hasChanged' suffices m@(Module{ modPath = obj }) = do
     mbSrc <- tryExtensions suffices obj
     case mbSrc of
          Nothing -> return True
@@ -211,13 +211,14 @@ recompileAll' suffices m args = do
     changed <- hasChanged m
     if changed
         then do
-            mbSource <- tryExtensions suffices (path m)
+            mbSource <- tryExtensions suffices path
             case mbSource of
                 Nothing
-                    -> error $ "Couldn't find source for object file: " ++ path m
+                    -> error $ "Couldn't find source for object file: " ++ path
                 Just source
                     -> makeAll source args
-        else return (MakeSuccess NotReq (path m))
+        else return (MakeSuccess NotReq path)
+    where path = modPath m
 
 -- ---------------------------------------------------------------------
 -- rawMake : really do the compilation
@@ -398,7 +399,7 @@ rawMerge src stb out always_merge =
                     (Right src_syn, Right stb_syn) -> do
 
                         let mrg_syn = mergeModules src_syn stb_syn
-                            mrg_syn'= replaceModName mrg_syn (mkModid out)
+                            mrg_syn'= replaceModName mrg_syn (takeBaseName' out)
                             mrg_str = pretty mrg_syn'
 
                         writeFile out mrg_str

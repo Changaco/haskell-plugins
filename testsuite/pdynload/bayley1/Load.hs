@@ -3,13 +3,6 @@ module Load where
 import API
 import System.Plugins
 
---
--- load doesn't seem to behave nicely when using dirname on hier names
---
--- make, and maybe other places, use dirname to work out various names
--- from paths, which is invalid when hier names are used..
---
-
 testload = do
 
   s  <- make "../Plugin1.hs"     ["-i../api"]
@@ -26,17 +19,13 @@ testload = do
 
   case fc of
     LoadFailure msg -> mapM_ putStrLn msg
-    LoadSuccess modul proc -> do
-      let ac :: API.PluginAPI; ac = proc
-      let s = proc 42
-      print s
+    LoadSuccess modul f -> do
+      let ac :: API.PluginAPI; ac = f
+      putStrLn $ f 42
 
-  -- will request  'Plugin2', but module is actually 'Sub.Plugin2'
-  print o2
   fc <- pdynload (o2) ["..","../api"] [] "API.PluginAPI" "action"
   case fc of
     LoadFailure msg -> mapM_ putStrLn msg
-    LoadSuccess modul proc -> do
-      let ac :: API.PluginAPI; ac = proc
-      let s = proc 42
-      print s
+    LoadSuccess modul f -> do
+      let ac :: API.PluginAPI; ac = f
+      putStrLn $ f 42

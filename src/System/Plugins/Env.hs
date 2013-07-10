@@ -43,17 +43,19 @@ module System.Plugins.Env (
         union,
         grabDefaultPkgConf,
         readPackageConf,
-        lookupPkg
+        lookupPkgDeps
 
    ) where
 
 #include "../../../config.h"
 
-import System.Plugins.LoadTypes (Module)
-import System.Plugins.Consts           ( sysPkgSuffix )
+import System.Plugins.Consts
+import System.Plugins.LoadTypes
+import System.Plugins.Utils
 
-import Control.Monad            ( filterM, foldM )
+import Control.Monad            ( filterM )
 
+import Data.Either              ( rights )
 import Data.IORef               ( writeIORef, readIORef, newIORef, IORef() )
 import Data.Maybe               ( isJust, isNothing, fromMaybe )
 import Data.List                ( isSuffixOf, partition )
@@ -78,7 +80,6 @@ import Distribution.Verbosity
 
 import Data.Map (Map)
 import qualified Data.Map as M
-import qualified Data.Set as S
 
 --
 -- | We need to record what modules and packages we have loaded, so if
@@ -184,28 +185,26 @@ lockAndWrite ref f = withEnv (readIORef ref >>= f >>= writeIORef ref)
 --
 -- | insert a loaded module name into the environment
 --
-addModule :: String -> Module -> IO ()
-addModule s m = modifyModEnv $ \e -> let c = maybe 0 snd (M.lookup s e)
-                                     in return $ M.insert s (m,c+1) e
-
+addModule :: Module -> IO ()
+addModule m = modifyModEnv $ \e -> let c = maybe 0 snd (M.lookup (modKey m) e)
+                                   in return $ M.insert (modKey m) (m,c+1) e
 
 --
 -- | remove a module name from the environment. Returns True if the
 -- module was actually removed.
 --
 rmModule :: String -> IO Bool
-rmModule s = do modifyModEnv $ \e -> let c = maybe 1 snd (M.lookup s e)
-                                         e' = M.delete s e
+rmModule k = do modifyModEnv $ \e -> let c = maybe 1 snd (M.lookup k e)
                                      in if c-1 <= 0
-                                           then return e'
+                                           then return $ M.delete k e
                                            else return e
-                withModEnv $ \e -> return (isNothing  (M.lookup s e))
+                withModEnv $ \e -> return (isNothing  (M.lookup k e))
 
 --
 -- | insert a list of module names all in one go
 --
-addModules :: [(String,Module)] -> IO ()
-addModules ns = mapM_ (uncurry addModule) ns
+addModules :: [Module] -> IO ()
+addModules = mapM_ addModule
 
 --
 -- | is a module\/package already loaded?
@@ -295,49 +294,17 @@ readPackageConf f = do
     pkgIndex <- getInstalledPackages silent [GlobalPackageDB, UserPackageDB, SpecificPackageDB f] pc
     return $ allPackages pkgIndex
 
---
--- Package path, given a package name, look it up in the environment and
--- return the path to all the libraries needed to load this package.
---
--- What do we need to load? With the library_dirs as prefix paths:
---      . anything in the hs_libraries fields, libdir expanded
---
---      . anything in the extra_libraries fields (i.e. cbits), expanded,
---
---      which includes system .so files.
---
---      . also load any dependencies now, because of that weird mtl
---      library that lang depends upon, but which doesn't show up in the
---      interfaces for some reason.
---
--- We return all the package paths that possibly exist, and the leave it
--- up to loadObject not to load the same ones twice...
---
-lookupPkg :: PackageName -> IO ([FilePath],[FilePath])
-lookupPkg pn = go S.empty pn >>= \(a, b) -> return (S.toList a, S.toList b)
-    where
-      go seen p = do
-        (ps, a, b) <- lookupPkg' p
-        let seen' = S.union seen ps
-            notSeenYet = S.toList $ S.difference ps seen
-            f (a',b') p' = go seen' p' >>= \(a'',b'') ->
-                return (S.union a' a'', S.union b' b'')
-        foldM f (a,b) notSeenYet
 
+-- | Given a package name, look it up in the environment and return its
+-- dependencies: packages, static libs and dynamic libs.
 --
--- return any stuff to load for this package, plus the list of packages
--- this package depends on. which includes stuff we have to then load
--- too.
---
-lookupPkg' :: PackageName -> IO (S.Set PackageName, S.Set FilePath, S.Set FilePath)
-lookupPkg' p = withPkgEnvs go
+lookupPkgDeps :: PackageName -> IO ([PackageName], [Module])
+lookupPkgDeps p = withPkgEnvs go
     where
-        go []     = return (S.empty,S.empty,S.empty)
-        go (e:es) = case M.lookup p e of
-            Nothing  -> go es     -- look in other pkgs
-            Just pkg -> findDeps pkg
+        go []     = error $ "Package not found: "++p
+        go (e:es) = maybe (go es) findDeps $ M.lookup p e
 
-findDeps :: PackageConfig -> IO (S.Set PackageName, S.Set FilePath, S.Set FilePath)
+findDeps :: PackageConfig -> IO ([PackageName], [Module])
 findDeps pkg = do
     let hslibs  = hsLibraries pkg
         (cbits,extras) = partition (isSuffixOf "_cbits") (extraLibraries pkg)
@@ -350,15 +317,13 @@ findDeps pkg = do
     -- If we're loading dynamic libs we need the cbits to appear before the
     -- real packages.
     libs <- mapM (findHSlib libdirs) (cbits ++ hslibs)
-    let slibs = [ lib | Right (Static lib)  <- libs ]
-        dlibs = [ lib | Right (Dynamic lib) <- libs ]
 #if defined(CYGWIN) || defined(__MINGW32__)
     syslibdir <- getSystemDirectory
     dlls' <- mapM (findFile' $ syslibdir ++ libdirs) dlls
 #else
     dlls' <- mapM (findFile' libdirs) dlls
 #endif
-    return (S.fromList deppkgs, S.fromList slibs, S.fromList $ dlls' ++ dlibs)
+    return (deppkgs, map (mkModule True) dlls' ++ rights libs)
 
     where
 #if defined(CYGWIN) || defined(__MINGW32__)
@@ -378,15 +343,15 @@ findDeps pkg = do
         -- Problem: sysPkgSuffix  is ".o", but extra libraries could be ".so"
         -- Solution: first look for static library, if we don't find it, look
         -- for a dynamic version.
-        findHSlib :: [FilePath] -> FilePath -> IO (Either String HSLib)
+        findHSlib :: [FilePath] -> FilePath -> IO (Either String Module)
         findHSlib dirs lib = do
             static <- findHSslib dirs lib
             case static of
-                Just file -> return $ Right $ Static file
+                Just path -> return $ Right $ mkModule False path
                 Nothing   -> do
                     dynamic <- findHSdlib dirs lib
                     case dynamic of
-                        Just file -> return $ Right $ Dynamic file
+                        Just path -> return $ Right $ mkModule True path
                         Nothing   -> return $ Left lib
 
         findHSslib dirs lib = findFile dirs $ lib ++ sysPkgSuffix
@@ -395,7 +360,7 @@ findDeps pkg = do
         findFile' :: [FilePath] -> FilePath -> IO FilePath
         findFile' ds f = maybe f id `fmap` findFile ds f
 
-data HSLib = Static FilePath | Dynamic FilePath
+        mkModule shared path = Module (takeBaseName' path) path shared Nothing
 
 data LibrarySpec
    = DLL String         -- -lLib

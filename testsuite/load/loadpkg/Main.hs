@@ -1,4 +1,4 @@
 
 import System.Plugins
 
-main = loadPackageWith "posix" []
+main = loadPackageWith "base" []

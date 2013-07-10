@@ -42,7 +42,6 @@ module System.Plugins.Load (
 
       -- * Low-level interface
       , initLinker      -- start it up
-      , loadModule      -- load a vanilla .o
       , loadFunction    -- retrieve a function from an object
       , loadFunction_   -- retrieve a function from an object
       , loadPackageFunction
@@ -64,7 +63,7 @@ module System.Plugins.Load (
 
 import System.Plugins.Env
 import System.Plugins.Utils
-import System.Plugins.Consts      ( sysPkgSuffix, hiSuf, prefixUnderscore, ghc )
+import System.Plugins.Consts
 import System.Plugins.LoadTypes
 import System.Plugins.Process     ( exec )
 
@@ -77,10 +76,9 @@ import TcRnMonad (initTcRnIf)
 import Data.Dynamic          ( fromDynamic, Dynamic )
 import Data.Typeable         ( Typeable )
 
-import Data.List                ( isSuffixOf, nub, nubBy )
-import Control.Monad            ( when, filterM, liftM )
-import System.Directory         ( doesFileExist, removeFile )
-import System.FilePath          ( replaceExtension, takeDirectory, (</>) )
+import Control.Monad            ( when, forM, forM_ )
+import System.Directory         ( findFile, removeFile )
+import System.FilePath          ( dropExtension, replaceExtension, takeDirectory )
 import Foreign.C.String         ( CString, withCString, peekCString )
 
 #if !MIN_VERSION_ghc(7,2,0)
@@ -164,13 +162,11 @@ load obj incpaths pkgconfs sym = do
 
     -- load extra package information
     mapM_ addPkgConf pkgconfs
-    (hif,moduleDeps) <- loadDepends obj incpaths
 
-    m' <- loadObject obj . Object . ifaceModuleName $ hif
-    let m = m' { iface = hif }
-    resolveObjs (mapM_ unloadAll (m:moduleDeps))
+    -- load the object and its dependencies
+    m <- loadRecursive obj incpaths
 
-    addModuleDeps m' moduleDeps
+    -- lookup the requested symbol
     v <- loadFunction m sym
     return $ case v of
         Nothing -> LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
@@ -250,9 +246,9 @@ pdynload_ object incpaths pkgconfs args ty sym = do
 --
 unify obj incs args ty sym = do
         (tmpf,hdl) <- mkTemp
+        iface <- readBinIface' $ replaceExtension obj hiSuf
 
-        let nm  = mkModid tmpf
-            src = mkTest nm (mkModid obj) (fst $ break (=='.') ty) ty sym
+        let src = mkTest (takeBaseName' tmpf) (ifaceModuleName iface) ty sym
             is  = map ("-i"++) incs             -- api
             i   = "-i" ++ takeDirectory obj     -- plugin
 
@@ -262,10 +258,10 @@ unify obj incs args ty sym = do
         removeFile tmpf
         return err
 
-mkTest modnm plugin api ty sym =
+mkTest modnm plugin ty sym =
        "module "++ modnm ++" where" ++
-       "\nimport qualified " ++ plugin  ++
-       "\nimport qualified " ++ api     ++
+       "\nimport qualified " ++ plugin ++
+       "\nimport qualified " ++ (dropExtension ty) ++
        "\n_ = "++ plugin ++"."++ sym ++" :: "++ty
 
 ------------------------------------------------------------------------
@@ -309,25 +305,62 @@ unloadAll m = do moduleDeps <- getModuleDeps m
 
 
 --
--- | this will be nice for panTHeon, needs thinking about the interface
--- reload a single object file. don't care about depends, assume they
--- are loaded. (should use state to store all this)
+-- | Reload a single object file. Don't care about depends, assume they
+-- are loaded.
 --
--- assumes you've already done a 'load'
---
--- should factor the code
+-- Assumes you've already done a 'load'.
 --
 reload :: Module -> Symbol -> IO (LoadStatus a)
-reload m@(Module{path = p, iface = hi}) sym = do
-        unloadObj m     -- unload module (and delete)
-        m_ <- loadObject p . Object . ifaceModuleName $ hi   -- load object at path p
-        let m' = m_ { iface = hi }
+reload m sym = do
+    unloadObj m >> loadObject m >> resolveObjs (unloadAll m)
+    v <- loadFunction m sym
+    return $ case v of
+                  Nothing -> LoadFailure ["load: couldn't find symbol `"++sym++"'"]
+                  Just a  -> LoadSuccess m a
 
-        resolveObjs (unloadAll m)
-        v <- loadFunction m' sym
-        return $ case v of
-                Nothing -> LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
-                Just a  -> LoadSuccess m' a
+
+--
+-- | Load an object and its dependencies.
+--
+loadRecursive :: FilePath -> [FilePath] -> IO Module
+loadRecursive obj incpaths = do
+    -- read the interface file
+    let hipath = replaceExtension obj hiSuf
+    iface <- handleDoesntExist (\_ -> error $ "File not found: "++hipath)
+                               (readBinIface' hipath)
+    let deps = mi_deps iface
+        (pkgs, mods) = (dep_pkgs deps, dep_mods deps)
+
+    -- filter and load package dependencies
+#if MIN_VERSION_ghc(7,2,0)
+    pkgs' <- filterLoaded $ map (packageIdString . fst) pkgs
+#else
+    pkgs' <- filterLoaded $ map packageIdString pkgs
+#endif
+    mapM_ loadPackage pkgs'
+    resolveObjs (mapM_ unloadPackage pkgs')
+
+    -- filter module dependencies
+    mods' <- filterLoaded $ map (moduleNameString . fst) mods
+
+    -- find the modules and load them
+    moduleDeps <- forM mods' $ \modname -> do
+        objpath <- findFile' incpaths $ replace '.' '/' modname ++ objSuf
+        loadRecursive objpath incpaths
+
+    -- load and resolve the object
+    let m = Module (ifaceModuleName iface) obj False (Just iface)
+    loadObject m
+    resolveObjs (mapM_ unloadAll (m:moduleDeps))
+
+    -- update the environment
+    addModuleDeps m moduleDeps
+
+    return m
+
+  where
+    findFile' ds f = maybe (error $ "Couldn't find file: "++f) id
+                     `fmap` findFile ds f
 
 
 --
@@ -337,12 +370,11 @@ reload m@(Module{path = p, iface = hi}) sym = do
 loadFunction :: Module          -- ^ The module the value is in
              -> String          -- ^ Symbol name of value
              -> IO (Maybe a)    -- ^ The value you want
-loadFunction (Module { iface = i }) valsym
-    = loadFunction_ (ifaceModuleName i) valsym
+loadFunction (Module{ modKey = k }) = loadFunction_ k
 
-loadFunction_ :: String
-              -> String
-              -> IO (Maybe a)
+loadFunction_ :: String         -- ^ The key of the module the value is in
+              -> String         -- ^ Symbol name of value
+              -> IO (Maybe a)   -- ^ The value you want
 loadFunction_ = loadFunction__ Nothing
 
 loadFunction__ :: Maybe String
@@ -375,71 +407,33 @@ loadPackageFunction pkgName modName functionName =
        loadFunction__ (Just pkgName) modName functionName
 
 --
--- | Load a GHC-compiled Haskell vanilla object file.
--- The first arg is the path to the object file
+-- | Load a vanilla or shared object.
 --
--- We make it idempotent to stop the nasty problem of loading the same
--- .o twice. Also the rts is a very special package that is already
--- loaded, even if we ask it to be loaded. N.B. we should insert it in
--- the list of known packages.
+-- We make it idempotent to stop the nasty problem of loading the same .o twice.
 --
--- NB the environment stores the *full path* to an object. So if you
--- want to know if a module is already loaded, you need to supply the
--- *path* to that object, not the name.
---
--- NB -- let's try just the module name.
---
--- loadObject loads normal .o objs, and packages too. .o objs come with
--- a nice canonical Z-encoded modid. packages just have a simple name.
--- Do we want to ensure they won't clash? Probably.
---
---
---
--- the second argument to loadObject is a string to use as the unique
--- identifier for this object. For normal .o objects, it should be the
--- Z-encoded modid from the .hi file. For archives\/packages, we can
--- probably get away with the package name
---
-loadObject :: FilePath -> Key -> IO Module
-loadObject p ky@(Object k)  = loadObject' p ky k
-loadObject p ky@(Package k) = loadObject' p ky k
+loadObject :: Module -> IO ()
+loadObject m = isLoaded (modKey m) >>= loadObject' m >> addModule m
 
-loadObject' :: FilePath -> Key -> String -> IO Module
-loadObject' p ky k
-    | ("HSrts"++sysPkgSuffix) `isSuffixOf` p = return (emptyMod p)
+loadObject' _ True = return ()
 
-    | otherwise
-    = do alreadyLoaded <- isLoaded k
-         when (not alreadyLoaded) $ do
-              r <- withCString p c_loadObj
-              when (not r) (error $ "Could not load module `"++p++"'")
-         addModule k (emptyMod p)   -- needs to Z-encode module name
-         return (emptyMod p)
+loadObject' (Module{ modIsShared = False, modPath = p }) _ = do
+    r <- withCString p c_loadObj
+    when (not r) $ error $ "Could not load module `"++p++"'"
 
-    where emptyMod q = Module q (mkModid q) Vanilla undefined ky
-
--- |
--- load a single object. no dependencies. You should know what you're
--- doing.
---
-loadModule :: FilePath -> IO Module
-loadModule obj = do
-    let hifile = replaceExtension obj hiSuf
-    exists <- doesFileExist hifile
-    if (not exists)
-        then error $ "No .hi file found for "++show obj
-        else do hiface <- readBinIface' hifile
-                loadObject obj (Object (ifaceModuleName hiface))
+loadObject' (Module{ modIsShared = True, modPath = p }) _ = do
+    errmsg <- withCString p c_addDLL
+    when (errmsg /= nullPtr) $ do
+         e <- peekCString errmsg
+         error $ "Couldn't load `"++p++"\' because "++e
 
 --
 -- | Load a generic .o file, good for loading C objects.
--- You should know what you're doing..
--- Returns a fairly meaningless iface value.
 --
 loadRawObject :: FilePath -> IO Module
-loadRawObject obj = loadObject obj (Object k)
-    where
-        k = encode (mkModid obj)  -- Z-encoded module name
+loadRawObject obj = do
+    let m = Module (takeBaseName' obj) obj False Nothing
+    loadObject m
+    return m
 
 --
 -- | Resolve (link) the modules loaded by the 'loadObject' function.
@@ -452,28 +446,19 @@ resolveObjs unloadLoaded
 
 -- | Unload a module
 unloadObj :: Module -> IO ()
-unloadObj (Module { path = p, kind = k, key = ky }) = case k of
-        Vanilla -> withCString p $ \c_p -> do
-                removed <- rmModule name
-                when (removed) $ do r <- c_unloadObj c_p
-                                    when (not r) (error "unloadObj: failed")
-        Shared  -> return () -- can't unload .so?
-    where name = case ky of Object s -> s ; Package pk -> pk
+unloadObj (Module{ modKey = k, modIsShared = shared, modPath = p }) = do
+    removed <- rmModule k
+    when (removed && not shared) $ do
+         r <- withCString p c_unloadObj
+         when (not r) $ error "unloadObj: failed"
 
 
---
--- | from ghci\/ObjLinker.c
---
--- Load a .so type object file.
---
+-- | Load a shared object file (.so or .dll).
 loadShared :: FilePath -> IO Module
-loadShared str = do
-    maybe_errmsg <- withCString str $ \dll -> c_addDLL dll
-    if maybe_errmsg == nullPtr
-        then return (Module str (mkModid str) Shared undefined (Package (mkModid str)))
-        else do e <- peekCString maybe_errmsg
-                error $ "loadShared: couldn't load `"++str++"\' because "++e
-
+loadShared obj = do
+    let m = Module (takeBaseName' obj) obj True Nothing
+    loadObject m
+    return m
 
 --
 -- | Load a -package that we might need, implicitly loading the cbits too
@@ -486,31 +471,20 @@ loadShared str = do
 --
 loadPackage :: String -> IO ()
 loadPackage p = do
-        (libs,dlls) <- lookupPkg p
-        mapM_ (\l -> loadObject l (Package (mkModid l))) libs
-        mapM_ loadShared dlls
+    (pkgs,objs) <- lookupPkgDeps p
+    mapM_ loadPackage pkgs
+    mapM_ loadObject objs
 
 
 
 --
--- | Unload a -package, that has already been loaded. Unload the cbits
--- too. The argument is the name of the package.
---
--- May need to check if it exists.
---
--- Note that we currently need to unload everything. grumble grumble.
---
--- We need to add the version number to the package name with 6.4 and
--- over. "yi-0.1" for example. This is a bug really.
+-- | Unload a package that has already been loaded. Unload the cbits too.
+-- The argument is the name of the package.
 --
 unloadPackage :: String -> IO ()
 unloadPackage pkg = do
-    let pkg' = takeWhile (/= '-') pkg   -- in case of *-0.1
-    libs <- liftM (\(a,_) -> (filter (isSublistOf pkg') ) a) (lookupPkg pkg)
-    flip mapM_ libs $ \p -> withCString p $ \c_p -> do
-                        r <- c_unloadObj c_p
-                        when (not r) (error "unloadObj: failed")
-                        rmModule (mkModid p)      -- unrecord this module
+    (_,mods) <- lookupPkgDeps pkg
+    forM_ mods unloadObj
 
 --
 -- | load a package using the given package.conf to help
@@ -522,65 +496,6 @@ loadPackageWith p pkgconfs = do
         mapM_ addPkgConf pkgconfs
         loadPackage p
 
-
--- ---------------------------------------------------------------------
--- | module dependency loading
---
--- given an Foo.o vanilla object file, supposed to be a plugin compiled
--- by our library, find the associated .hi file. If this is found, load
--- the dependencies, packages first, then the modules. If it doesn't
--- exist, assume the user knows what they are doing and continue. The
--- linker will crash on them anyway. Second argument is any include
--- paths to search in
---
--- ToDo problem with absolute and relative paths, and different forms of
--- relative paths. A user may cause a dependency to be loaded, which
--- will search the incpaths, and perhaps find "./Foo.o". The user may
--- then explicitly load "Foo.o". These are the same, and the loader
--- should ignore the second load request. However, isLoaded will say
--- that "Foo.o" is not loaded, as the full string is used as a key to
--- the modenv map. We need a canonical form for the keys -- is basename
--- good enough?
---
-loadDepends :: FilePath -> [FilePath] -> IO (ModIface,[Module])
-loadDepends obj incpaths = do
-    let hifile = replaceExtension obj hiSuf
-    exists <- doesFileExist hifile
-    if (not exists)
-        then do error $ "File not found: "++hifile
-        else do hiface <- readBinIface' hifile
-                let ds = mi_deps hiface
-
-                -- remove ones that we've already loaded
-                ds' <- filterLoaded . map (moduleNameString . fst) . dep_mods $ ds
-
-                -- now, try to generate a path to the actual .o file
-                -- fix up hierachical names
-                let mods_ = map (\s -> (s, replace '.' '/' s)) ds'
-
-                -- construct a list of possible dependent modules to load
-                let mods = concatMap (\p ->
-                            map (\(hi,m) -> (hi,p </> m++".o")) mods_) incpaths
-
-                -- remove modules that don't exist
-                mods' <- filterM (\(_,y) -> doesFileExist y) $
-                                nubBy (\v u -> snd v == snd u)  mods
-
-                -- now remove duplicate valid paths to the same object
-                let mods'' = nubBy (\v u -> fst v == fst u)  mods'
-
-                -- and find some packages to load, as well.
-                let ps = dep_pkgs ds
-#if MIN_VERSION_ghc(7,2,0)
-                ps' <- filterLoaded . map packageIdString . nub $ map fst ps
-#else
-                ps' <- filterLoaded . map packageIdString . nub $ ps
-#endif
-
-                mapM_ loadPackage ps'
-                resolveObjs (mapM_ unloadPackage ps')
-                moduleDeps <- mapM (\(hi,m) -> loadObject m (Object hi)) mods''
-                return (hiface,moduleDeps)
 
 -- ---------------------------------------------------------------------
 -- | Nice interface to .hi parser

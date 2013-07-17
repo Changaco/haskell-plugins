@@ -293,6 +293,18 @@ find_opt = f Nothing
           f r _ _ = r
 
 --
+-- | Extract module name from Haskell source. Raises an exception on failure.
+--
+getModuleName :: FilePath -> IO String
+getModuleName path = do
+    src <- readFile path
+    return $ go $ map words $ lines src
+  where
+    go [] = error "module name not found in "++path
+    go (("module":name:_):_) = name
+    go (_:rest) = go rest
+
+--
 -- | Lower-level than 'make'. Compile a .hs file to a .o file
 -- If the plugin needs to import an api (which should be almost
 -- everyone) then the ghc flags to find the api need to be provided as

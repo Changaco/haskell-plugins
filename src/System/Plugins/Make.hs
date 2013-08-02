@@ -284,7 +284,8 @@ analyzeAndFixArgs src args =
 -- | Maybe the last value of the given flag.
 --
 -- Example:
--- > find_opt "-o" ["-i..","-o","Foo.o","-o","dist/Foo.o"]
+--
+-- >>> find_opt "-o" ["-i..","-o","Foo.o","-o","dist/Foo.o"]
 -- Just "dist/Foo.o"
 --
 find_opt :: Arg -> [Arg] -> Maybe Arg

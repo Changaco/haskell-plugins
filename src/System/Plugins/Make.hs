@@ -301,7 +301,7 @@ getModuleName path = do
     src <- readFile path
     return $ go $ map words $ lines src
   where
-    go [] = error "module name not found in "++path
+    go [] = error $ "module name not found in "++path
     go (("module":name:_):_) = name
     go (_:rest) = go rest
 

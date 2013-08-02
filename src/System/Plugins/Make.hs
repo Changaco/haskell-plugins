@@ -290,7 +290,7 @@ analyzeAndFixArgs src args =
 --
 find_opt :: Arg -> [Arg] -> Maybe Arg
 find_opt = f Nothing
-    where f r opt (a:b:cs) = f (if a == opt then Just b else r) opt cs
+    where f r opt (a:b:cs) = f (if a == opt then Just b else r) opt (b:cs)
           f r _ _ = r
 
 --

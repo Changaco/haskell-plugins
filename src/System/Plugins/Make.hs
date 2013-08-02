@@ -317,7 +317,7 @@ build :: FilePath          -- ^ path to .hs source
       -> IO [String]
 
 build src obj args = do
-    (_out,err) <- exec ghc (src:args)       -- this is a fork()
+    (_,_,err) <- exec ghc (src:args)       -- this is a fork()
     obj_exists <- doesFileExist obj -- sanity
     return $ if not obj_exists && null err -- no errors, but no object?
              then ["Compiled, but didn't create object file `"++obj++"'!"]

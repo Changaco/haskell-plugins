@@ -65,7 +65,7 @@ import System.Plugins.Env
 import System.Plugins.Utils
 import System.Plugins.Consts
 import System.Plugins.LoadTypes
-import System.Plugins.Process     ( exec )
+import System.Plugins.Process
 
 import BinIface
 import HscTypes
@@ -236,10 +236,10 @@ pdynload_ :: FilePath       -- ^ object to load
           -> IO (LoadStatus a)
 
 pdynload_ object incpaths pkgconfs args ty sym = do
-        errors <- unify object incpaths args ty sym
-        if null errors
-                then load object incpaths pkgconfs sym
-                else return $ LoadFailure errors
+    (r,err) <- unify object incpaths args ty sym
+    case r of
+         ExitSuccess -> load object incpaths pkgconfs sym
+         ExitFailure _ -> return $ LoadFailure err
 
 ------------------------------------------------------------------------
 -- | run the typechecker over the constraint file
@@ -254,9 +254,9 @@ unify obj incs args ty sym = do
 
         hPutStr hdl src >> hClose hdl
 
-        (_,err) <- exec ghc (tmpf:i:is++args++["-fno-code"])
+        (r,_,err) <- exec ghc (tmpf:i:is++args++["-fno-code"])
         removeFile tmpf
-        return err
+        return (r,err)
 
 mkTest modnm plugin ty sym =
        "module "++ modnm ++" where" ++

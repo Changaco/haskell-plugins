@@ -49,7 +49,7 @@ library
                           directory >= 1.2.0.0,
                           filepath,
                           random,
-                          process,
+                          process >= 1.0.1.1,
                           ghc >= 6.10,
                           ghc-prim
 

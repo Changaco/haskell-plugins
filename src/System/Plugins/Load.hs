@@ -168,9 +168,11 @@ load obj incpaths pkgconfs sym = do
 
     -- lookup the requested symbol
     v <- loadFunction m sym
-    return $ case v of
-        Nothing -> LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
-        Just a  -> LoadSuccess m a
+    case v of
+        Nothing -> do
+            unload m
+            return $ LoadFailure ["load: couldn't find symbol <<"++sym++">>"]
+        Just a  -> return $ LoadSuccess m a
 
 --
 -- | Like load, but doesn't want a package.conf arg (they are rarely used)
